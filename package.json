@@ -1,0 +1,41 @@
+{
+  "name": "ai-usb",
+  "version": "0.1.0",
+  "description": "AI U盘 — 便携式多 Agent 工作台 Launcher (OpenClaw / Hermes / Codex / Claude Code)",
+  "type": "module",
+  "main": "src/electron/main.js",
+  "bin": {
+    "ai-usb": "launcher.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "launcher": "node launcher.js",
+    "test": "node --test",
+    "doctor": "node launcher.js --doctor",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "portable",
+    "launcher",
+    "usb",
+    "workspace"
+  ],
+  "license": "MIT",
+  "author": "AI U盘",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "tar": "^7.5.22"
+  }
+}

@@ -1,0 +1,66 @@
+# electron-builder 配置 —— AI U盘 便携式多 Agent 工作台
+# 目标平台（PROJECT_SPEC §15）：Windows x64 / macOS ARM64+x64 / Linux x64
+
+appId: com.ai-usb.launcher
+productName: AI-USB
+copyright: MIT
+
+directories:
+  output: release
+  buildResources: build
+
+# 只打包代码文件；config/data/logs/workspace 等运行时数据目录由 Launcher 在
+# PORTABLE_ROOT（可执行文件旁）动态创建，绝不进入 asar。
+files:
+  - src/**/*
+  - launcher.js
+  - package.json
+  - "!**/*.map"
+  - "!**/test/**"
+
+asar: true
+npmRebuild: false
+
+# 图标（从 build/icon.png 512x512 自动生成各平台格式）
+icon: build/icon.png
+
+# ---------------- Windows ----------------
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  executableName: AI-USB
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: ${name}-${version}-setup.${ext}
+
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
+
+# ---------------- macOS ----------------
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  artifactName: ${name}-${version}-${arch}.${ext}
+
+# ---------------- Linux ----------------
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Utility
+
+appImage:
+  artifactName: ${name}-${version}-${arch}.${ext}

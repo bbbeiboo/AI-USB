@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>AI U盘</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 class="title">AI U盘</h1>
+      <div class="subtitle" id="portableRoot"></div>
+    </header>
+
+    <main class="agent-list" id="agentList"></main>
+
+    <footer class="actions">
+      <div class="actions-row">
+        <button class="btn btn-primary" id="btnStartSelected" disabled>启动选中</button>
+        <button class="btn" id="btnStartAll">全部启动</button>
+      </div>
+      <div class="actions-row">
+        <button class="btn" id="btnStopAll">全部停止</button>
+        <button class="btn" id="btnSettings">设置</button>
+      </div>
+      <div class="actions-links">
+        <a href="#" id="linkAbout">📢 了解 AI U盘</a>
+        <a href="#" id="linkTutorial">📚 使用教程</a>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="modal hidden" id="settingsModal">
+    <div class="modal-body">
+      <div class="modal-header">
+        <h2>设置</h2>
+        <button class="btn-close" id="btnCloseSettings">✕</button>
+      </div>
+      <div class="tabs" id="settingsTabs">
+        <button class="tab active" data-tab="diagnostics">诊断</button>
+        <button class="tab" data-tab="update">更新</button>
+        <button class="tab" data-tab="about">关于</button>
+      </div>
+      <div class="tab-content" id="tab-diagnostics">
+        <button class="btn" id="btnDoctor">运行诊断</button>
+        <pre class="diag-output" id="diagOutput">点击「运行诊断」查看环境信息…</pre>
+      </div>
+      <div class="tab-content hidden" id="tab-update">
+        <button class="btn" id="btnCheckUpdate">检查更新</button>
+        <pre class="diag-output" id="updateOutput">点击「检查更新」查询 GitHub Releases…</pre>
+      </div>
+      <div class="tab-content hidden" id="tab-about">
+        <p><strong>AI U盘</strong> — 便携式多 Agent 工作台</p>
+        <p>管理 OpenClaw / Hermes / Codex / Claude Code。</p>
+        <p>数据目录：<code id="aboutRoot"></code></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

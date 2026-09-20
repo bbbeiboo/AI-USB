@@ -1,0 +1,7 @@
+node_modules/
+release/
+data/state.json
+logs/*.log
+config/*.local.json
+.env
+*.log

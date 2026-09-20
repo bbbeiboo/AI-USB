@@ -1,0 +1,5 @@
+{
+  "channel": "stable",
+  "checkIntervalHours": 24,
+  "url": ""
+}

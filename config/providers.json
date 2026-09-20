@@ -1,0 +1,10 @@
+{
+  "openai": {
+    "enabled": false,
+    "baseUrl": "https://api.openai.com/v1"
+  },
+  "anthropic": {
+    "enabled": false,
+    "baseUrl": "https://api.anthropic.com"
+  }
+}

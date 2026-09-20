@@ -1,0 +1,30 @@
+{
+  "openclaw": {
+    "enabled": true,
+    "command": "openclaw",
+    "args": [],
+    "cwd": "",
+    "health": "cli"
+  },
+  "hermes": {
+    "enabled": true,
+    "command": "hermes",
+    "args": [],
+    "cwd": "",
+    "health": "cli"
+  },
+  "codex": {
+    "enabled": true,
+    "command": "codex",
+    "args": [],
+    "cwd": "",
+    "health": "cli"
+  },
+  "claude-code": {
+    "enabled": true,
+    "command": "claude",
+    "args": [],
+    "cwd": "",
+    "health": "cli"
+  }
+}

@@ -30,7 +30,7 @@ function today() {
 
 /* 1. 版本 */
 const VERSION = getVersion();
-record('Version', VERSION === '1.0.0-rc.1' ? 'PASS' : 'FAIL', `version=${VERSION}`);
+record('Version', VERSION === '1.0.0' ? 'PASS' : 'FAIL', `version=${VERSION}`);
 
 /* 2. Git 干净 */
 try {

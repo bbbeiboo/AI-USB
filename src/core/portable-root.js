@@ -1,7 +1,7 @@
 /**
  * PORTABLE_ROOT —— 便携根目录动态推导。
  *
- * 规则（禁止硬编码盘符 E:\ F:\ C:\）：
+ * 规则（禁止硬编码盘符，如 E:/ F:/ C:/）：
  *   1. 环境变量 PORTABLE_ROOT 显式覆盖（测试/调试用）。
  *   2. 打包发布（AI_USB_PACKAGED=1）：根目录 = 可执行文件所在目录。
  *      - Windows NSIS/portable：exe 就在 <root>/ 下 → dirname(exe)

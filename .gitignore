@@ -1,5 +1,6 @@
 node_modules/
 release/
+production/output/
 data/state.json
 logs/*.log
 config/*.local.json

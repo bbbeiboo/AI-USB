@@ -47,7 +47,7 @@
 | 9 | Update | ✅ 完成（GitHub Releases + 校验/备份/回滚） |
 | 10 | Backup/Rollback | ✅ 完成（备份 + 失败回滚，随 Update 实现） |
 | 11 | 跨平台构建 | 🟡 Windows 完成（nsis+portable 已构建验证）；macOS/Linux 需对应平台或 CI |
-| 12 | 商业发布 | ⬜ 未开始（licenses/NOTICE/THIRD_PARTY） |
+| 12 | 商业发布 | ✅ 完成（licenses/NOTICE/THIRD_PARTY/CHANGELOG/安装/故障排查） |
 
 ## 验证结果
 
@@ -57,6 +57,7 @@
 - ✅ Update 管理器测试 12/12：下载/校验/备份/替换/回滚/数据目录保护/错误路径
 - ✅ 打包态 PORTABLE_ROOT 测试 6/6：Windows/macOS/Linux AppImage/portable 各布局
 - ✅ Windows 打包成功：setup.exe + portable.exe，实机验证数据目录落 exe 旁
+- ✅ 商业发布材料：licenses/NOTICE/THIRD_PARTY + CHANGELOG + 安装/故障排查文档
 
 ## BLOCKED
 

@@ -23,7 +23,7 @@
 - [x] Backup/Rollback（备份排除数据目录 + 回滚恢复）
 - [x] 跨平台打包 — Windows（nsis + portable 已构建并实机验证）
 - [ ] 跨平台打包 — macOS（需 macOS 构建机 / CI）& Linux（AppImage/deb，可交叉构建）
-- [ ] 商业发布（licenses/NOTICE/THIRD_PARTY + README/故障排查）
+- [x] 商业发布（licenses/NOTICE/THIRD_PARTY + CHANGELOG + 安装/故障排查）
 
 ## 阻塞项
 

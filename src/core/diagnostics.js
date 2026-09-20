@@ -4,6 +4,7 @@
 import os from 'node:os';
 import { resolvePortableRoot } from './portable-root.js';
 import { runCommand } from './process-manager.js';
+import { getVersion } from './version.js';
 
 async function runtimeVersion(cmd, args) {
   const r = await runCommand(cmd, args, { timeout: 10000 });
@@ -18,6 +19,7 @@ export async function diagnose(mgr) {
   }
 
   return {
+    version: getVersion(),
     os: `${os.type()} ${os.release()}`,
     cpu: os.cpus()[0]?.model ?? 'unknown',
     cores: os.cpus().length,

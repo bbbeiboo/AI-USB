@@ -13,15 +13,13 @@
 import { createManager } from './src/core/agent-manager.js';
 import { resolvePortableRoot } from './src/core/portable-root.js';
 import { getConfig } from './src/core/config.js';
+import { getVersion } from './src/core/version.js';
 import { UpdateManager } from './src/core/update-manager.js';
-import fs from 'node:fs';
-import path from 'node:path';
 
 function createUpdater() {
-  const pkg = JSON.parse(fs.readFileSync(path.join(resolvePortableRoot(), 'package.json'), 'utf8'));
   return new UpdateManager({
     root: resolvePortableRoot(),
-    currentVersion: pkg.version,
+    currentVersion: getVersion(),
     config: getConfig('update'),
   });
 }

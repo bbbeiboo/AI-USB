@@ -12,7 +12,7 @@ import { diagnose } from '../core/diagnostics.js';
 import { logger } from '../core/logger.js';
 import { UpdateManager } from '../core/update-manager.js';
 import { getConfig } from '../core/config.js';
-import fs from 'node:fs';
+import { getVersion } from '../core/version.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,10 +35,9 @@ function getManager() {
 }
 
 function getUpdater() {
-  const pkg = JSON.parse(fs.readFileSync(path.join(resolvePortableRoot(), 'package.json'), 'utf8'));
   return new UpdateManager({
     root: resolvePortableRoot(),
-    currentVersion: pkg.version,
+    currentVersion: getVersion(),
     config: getConfig('update'),
   });
 }

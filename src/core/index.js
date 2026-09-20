@@ -1,5 +1,6 @@
 /** 核心模块统一导出。 */
-export { resolvePortableRoot, portablePath } from './portable-root.js';
+export { resolvePortableRoot, portablePath, resolvePackagedRoot } from './portable-root.js';
+export { getVersion } from './version.js';
 export { logger } from './logger.js';
 export { getConfig, saveConfig, initConfig, DEFAULT_CONFIG } from './config.js';
 export { readState, writeState, getAgentState, setAgentState } from './state.js';

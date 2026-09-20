@@ -2,6 +2,15 @@
 
 本项目遵循语义化版本（SemVer）。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
+## [1.0.0-rc.1] - 2026-09-20
+
+### 变更
+- 版本号统一到单一来源（`package.json`），移除 config 中冗余的 `version` 字段。
+- 新增 `src/core/version.js` 的 `getVersion()`，诊断/更新等统一读取。
+
+### 说明
+- 首个候选发布版（Release Candidate），功能与 0.1.0 一致，进入发布验证阶段。
+
 ## [0.1.0] - 2026-09-20
 
 ### 新增

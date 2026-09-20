@@ -11,7 +11,6 @@ const CONFIG_DIR = () => portablePath('config');
 export const DEFAULT_CONFIG = {
   app: {
     name: 'AI U盘',
-    version: '0.1.0',
     logLevel: 'INFO',
     startupTimeoutMs: 30000,
     autoCloseAfterStart: true,

@@ -91,3 +91,11 @@ Linux AppImage 用 `$APPIMAGE`。
 ## 许可证
 
 MIT。第三方 Agent 是否可随产品分发，须按其官方许可证与分发条款确认。
+
+## 文档
+
+- `docs/INSTALL.md` — 安装 / 使用说明
+- `docs/TROUBLESHOOTING.md` — 故障排查
+- `CHANGELOG.md` — 版本说明
+- `NOTICE/NOTICE.md` — 版权与第三方分发条款（含 Claude Code 专有提示）
+- `THIRD_PARTY/` — 第三方依赖清单与许可证

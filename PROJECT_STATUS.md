@@ -48,6 +48,7 @@
 | 10 | Backup/Rollback | ✅ 完成（备份 + 失败回滚，随 Update 实现） |
 | 11 | 跨平台构建 | 🟡 Windows 完成（nsis+portable 已构建验证）；macOS/Linux 需对应平台或 CI |
 | 12 | 商业发布 | ✅ 完成（licenses/NOTICE/THIRD_PARTY/CHANGELOG/安装/故障排查） |
+| 13 | Release Candidate | ✅ 完成（审计 + 生产工厂 + 便携性跨盘 + U盘流程验证） |
 
 ## 验证结果
 

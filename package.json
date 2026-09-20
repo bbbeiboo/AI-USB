@@ -1,6 +1,6 @@
 {
   "name": "ai-usb",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "description": "AI U盘 — 便携式多 Agent 工作台 Launcher (OpenClaw / Hermes / Codex / Claude Code)",
   "type": "module",
   "main": "src/electron/main.js",

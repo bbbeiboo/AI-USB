@@ -653,14 +653,14 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 1. 登录层：注册新账号 → 登出 → 重新登录，密码错误分支有提示。
 2. 四个 Agent（OpenClaw / Hermes / Codex / ClaudeCode）逐个启动，确认单窗口、进程可见、停止按钮真正结束进程。
 3. Agent 启动后停止，确认无残留进程、无多余窗口。
-4. 设置弹窗内 API 配置表单 12 个 `cfg-*` 元素完整（provider / baseurl / model / fetch-models / model-list / key / toggle-key / key-status / validate / test-form / save / clear-key）。
+4. ✅【已实点 2026-10-03】设置弹窗 12 个 `cfg-*` 元素完整（含 `cfg-key-status`「已配置（·····9b9d）」徽标），表单回显真实配置（OpenRouter / qwen 3.8 27B / 466 个模型缓存）。
 5. 保存自定义 baseUrl → 重开弹窗仍是自定义值（dirty 标记不误清）。
 6. 密钥保存后重开：密文态显示、状态徽标正确；清除密钥后回到未配置态。
 7. 连接测试按钮：保存配置成功 / 失败两分支均有可读反馈。
-8. 用量统计 tab：天数切换（7/30/90）、汇总卡片、三个维度表、导出 CSV/JSON、二次确认清空；真实 exe 内应能看到用量数据（纯浏览器内降级为错误提示 + 重试属预期）。
+8. ✅【已实点 2026-10-03】用量统计 tab 在真实 exe 内显示真实数据（5 请求 / 1,445 输入 / 25 输出 / 费用「—」不伪造 0；hermes / apihub.agnes-ai.com / agnes-2.5-flash 三表）。
 9. 关于 tab：产品 / 启动器版本 / 便携根目录 / 日志文件四行只读信息 + 「打开日志文件夹」按钮。
-10. 托盘：图标存在、菜单可恢复窗口；点关闭按钮 → 窗口隐藏进托盘、进程仍在（按设计）。
-11. **真实 `AI-Agent.exe` 窗口内点开设置弹窗，观察表单出现并可保存/重开** —— `browser_*` 工具无法附加 Electron 窗口，**「未实点，需用户手动确认」**。
+10. ✅【已实点 2026-10-03】WM_CLOSE → `Window Hidden to Tray` + 4 进程存活 + hwnd=0；点任务栏溢出区托盘图标「AI Agent U盘版」→ 窗口恢复（hwnd 复原）。
+11. ✅【已实点 2026-10-03，经用户授权】真实 `AI-Agent.exe` 窗口内点开设置弹窗：12 个 `cfg-*` 全渲染、三个 tab 切换、关闭→重开数据重新拉取、表单值回显一致。手段：Windows UIA（`browser_*` 无法附加 Electron，但 UIA 可以；Chromium 首次被 UIA 查询后需再查一次才能拿到完整树）。剩余未实点：第 1/2/3/5/6/7 条（涉及真实保存/Agent 启停/登录长流程）。
 
 
 ### 13.7 B1 根修记录：selftest 版本串 GBK/UTF-8 混流乱码（2026-10-03）
@@ -713,4 +713,35 @@ claude-code = `E:\桌面\AI Agent 母盘`（正确）、hermes `·` 保持正确
 
 **四闸门**：语法 8/8、单测 36/36、selftest 4/4（B1 修复保持：中文路径与 `·` 均正确）、构建 EXIT=0 零警告；
 asar 检索：`usage-panel` / `about-open-logs` 命中、占位文案 `待 4.2 迁移` 零命中（新代码确认已入包）。
-**真实 exe 内的用量数据展示仍属 13.6 手动清单第 8/11 条（browser_* 无法附加 Electron）。**
+**真实 exe 内的用量数据展示已于 13.10 实点验证。**
+
+### 13.10 真实 exe 实点验证记录（2026-10-03 晚，经用户授权）
+
+**手段**：Computer Use SDK 在本会话不可用（会话级基础设施限制），回退 **PowerShell UIAutomation** +
+`capture-window.ps1`（12.8.1）。关键经验：**Electron/Chromium 的可达性树要被 UIA 查询两次才完整**
+（首次查询触发渲染进程开启 a11y，第二次才能看到全部 AutomationId），且窗口隐藏进托盘后
+`Get-Process().MainWindowHandle` 为 0，UIA 脚本须先经托盘恢复。
+
+**实测通过项**（13.6 清单第 4 / 8 / 9 / 10 / 11 条，见各条 ✅ 标注）：
+设置弹窗全链路（打开 → 12 个 `cfg-*` 全渲染 → 三 tab 切换 → 关闭 → 重开重新拉取）、
+用量 tab 真实数据、关于 tab 真实 IPC 数据、托盘隐藏/恢复闭环。
+截图：`browser-screenshots/4.1-real-exe-{main,settings-api,tray-restored}.png`、
+`4.2-real-exe-usage{,-mine}.png`、`4.4-real-exe-about.png`。
+
+**【新发现】单实例锁的日志陷阱**：本次测试预检 `tasklist | grep` 误报"无实例"，
+而用户此前手动启动的实例（20:51:20，`Launcher Started`）一直在运行。第二次启动的实例：
+module 作用域的 `Auth Ready` / `AuthIpc Registered`（line ~1044，**先于** line 1388 的
+`requestSingleInstanceLock`）照常写进共享 `launcher.log`，随后因拿不到锁在 `whenReady` 里静默
+`app.quit()`——不写 `Launcher Started`、不建窗口。表现为：日志里出现一对"孤儿 Auth 行"，
+其后没有 `Launcher Started` / `Window LoadFile`，极易误判为"窗口日志丢了"。
+**对时口诀：Auth 行 ≠ 新窗口；`Launcher Started` 才是新实例的开始标记。**
+（可选改进，本轮未做：`!gotLock` 分支补一条 `Event=Second Instance Quit` 日志。）
+
+**预检教训**：本机 `tasklist | grep -ci AI-Agent` 在该环境不可靠（返回 0 但实际有实例）。
+以后进程预检改用 `Get-Process -Name AI-Agent -ErrorAction SilentlyContinue` 并显式打印计数。
+
+**清理与残留**：测试零写入（未点保存/清除/清空）；`Launcher/Data` 逐文件体积与基线一致
+（usage.jsonl 2184 B 未变、secrets 三 bin 未变、app.db 未变）；
+日志 70466 → 71527 B，与两次启动 + 一次 Hidden to Tray 对齐。
+`Launcher/Config/user-config.json` / `model-cache.json` 的未提交改动是**用户 20:56 手动配置
+Hermes（含 466 个模型缓存）** 所致，与本次测试无关，留待用户处置。

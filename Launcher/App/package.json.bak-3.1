@@ -1,0 +1,43 @@
+{
+  "name": "ai-agent-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Agent USB launcher - portable four-agent unified launcher. No API keys, no login.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^44.4.4",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.aiagent.usblauncher",
+    "productName": "AI-Agent",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "usage.js",
+      "usage-proxy.js",
+      "agent-process-manager.js"
+    ],
+    "directories": {
+      "output": "../../Build/Release/Windows-x64"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "AI-Agent.exe"
+    }
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "electron-store": "^11.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "tree-kill": "^1.2.2"
+  }
+}

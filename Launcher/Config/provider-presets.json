@@ -1,0 +1,71 @@
+{
+  "openai": {
+    "label": "OpenAI",
+    "protocolKind": "openai-compatible",
+    "baseUrl": "https://api.openai.com/v1",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "modelsFormat": "openai",
+    "keyPlaceholder": "sk-..."
+  },
+  "anthropic": {
+    "label": "Anthropic",
+    "protocolKind": "anthropic-compatible",
+    "baseUrl": "https://api.anthropic.com/v1",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "x-api-key",
+    "authPrefix": "",
+    "modelsFormat": "anthropic",
+    "keyPlaceholder": "sk-ant-...",
+    "extraHeaders": {
+      "anthropic-version": "2023-06-01"
+    }
+  },
+  "openrouter": {
+    "label": "OpenRouter",
+    "protocolKind": "openai-compatible",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "modelsFormat": "openai",
+    "keyPlaceholder": "sk-or-v1-..."
+  },
+  "deepseek": {
+    "label": "DeepSeek",
+    "protocolKind": "openai-compatible",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "modelsFormat": "openai",
+    "keyPlaceholder": "sk-..."
+  },
+  "agnes": {
+    "label": "Agnes AI",
+    "protocolKind": "openai-compatible",
+    "baseUrl": "https://apihub.agnes-ai.com/v1",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "modelsFormat": "openai",
+    "keyPlaceholder": "sk-..."
+  },
+  "custom": {
+    "label": "自定义",
+    "protocolKind": "custom",
+    "baseUrl": "",
+    "modelsEndpoint": "/models",
+    "responsesEndpoint": "/responses",
+    "authHeader": "Authorization",
+    "authPrefix": "Bearer ",
+    "modelsFormat": "openai",
+    "keyPlaceholder": "••••••••"
+  }
+}

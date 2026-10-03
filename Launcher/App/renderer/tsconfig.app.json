@@ -1,0 +1,31 @@
+{
+  // 渲染层（renderer/src）的 TS 配置：仅供编辑器/类型检查使用，
+  // 真正的转译由 Vite(esbuild) 完成（build:web 只跑 vite build，不跑 tsc）。
+  "compilerOptions": {
+    // 类型检查缓存放到 App 根 node_modules 下，避免 renderer/ 里多出一个 node_modules 目录
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    // 让 TS 认识 import.meta.env、?url 资源导入、*.svg 等 Vite 专有类型
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* 打包器模式：与 Vite 的模块解析规则保持一致 */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* 严格性开关 */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  // 只检查渲染层源码
+  "include": ["src"]
+}

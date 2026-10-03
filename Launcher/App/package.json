@@ -1,0 +1,66 @@
+{
+  "name": "ai-agent-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Agent USB launcher - portable four-agent unified launcher. No API keys, no login.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "launch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-launcher.ps1",
+    "selftest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-launcher.ps1 -Mode selftest",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:electron\"",
+    "dev:web": "vite --config renderer/vite.config.mts",
+    "dev:electron": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-launcher.ps1 -Mode dev",
+    "build:web": "vite build --config renderer/vite.config.mts",
+    "build:app": "cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable",
+    "build": "npm run build:web && npm run build:app",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^9.2.4",
+    "cross-env": "^10.1.0",
+    "electron": "^44.4.4",
+    "electron-builder": "^26.0.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  },
+  "build": {
+    "appId": "com.aiagent.usblauncher",
+    "productName": "AI-Agent",
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "usage.js",
+      "usage-proxy.js",
+      "agent-process-manager.js",
+      "json-util.js",
+      "auth-service.js",
+      "ipc-auth.js",
+      "renderer/dist/**/*"
+    ],
+    "directories": {
+      "output": "../../Build/Release/Windows-x64"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "AI-Agent.exe"
+    }
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "electron-store": "^11.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "tree-kill": "^1.2.2"
+  }
+}

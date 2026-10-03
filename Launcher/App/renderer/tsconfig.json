@@ -1,0 +1,8 @@
+{
+  // 解决方案式 tsconfig：自身不编译文件，只把上面两个子配置串起来（tsc -b 用）
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

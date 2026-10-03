@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'" />
+<title>AI Agent U盘版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI","Microsoft YaHei",sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; display:flex; flex-direction:column; }
+  header { padding:18px 24px; background:linear-gradient(135deg,#1e3a5f,#0f172a); border-bottom:1px solid #243049; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:19px; font-weight:700; }
+  header .sub { font-size:11px; color:#8aa0c0; margin-top:3px; }
+  .btn { border:0; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; font-weight:600; }
+  .btn-primary { background:#2563eb; color:#fff; }
+  .btn-ghost { background:#334155; color:#e2e8f0; }
+  .btn-danger { background:#b91c1c; color:#fff; }
+  .badge-ed { display:inline-block; margin-top:6px; font-size:11px; color:#7dd3fc; border:1px solid #2b6cb0; background:#12304f; padding:2px 10px; border-radius:20px; }
+  #status { padding:8px 24px; font-size:12px; color:#94a3b8; }
+  /* aggregator layout: sidebar + detail */
+  #mainView { flex:1; display:flex; min-height:0; }
+  #side { width:240px; border-right:1px solid #243049; background:#0b1220; padding:14px 10px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
+  .side-h { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:.08em; padding:4px 10px 8px; }
+  .agent-item { display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:10px; cursor:pointer; border:1px solid transparent; }
+  .agent-item:hover { background:#1e293b; }
+  .agent-item.active { background:#1e3a5f; border-color:#2563eb; }
+  .agent-item .nm { font-size:14px; font-weight:600; }
+  .agent-item .st { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .agent-item .dot { width:9px; height:9px; border-radius:50%; background:#94a3b8; flex:none; }
+  .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:6px; padding-top:10px; }
+  .side-foot button { padding:8px 0; border:0; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; }
+  #detail { flex:1; padding:22px 26px; overflow:auto; display:flex; flex-direction:column; gap:14px; }
+  .d-head { display:flex; align-items:center; gap:14px; }
+  .d-head .big { width:14px; height:14px; border-radius:50%; }
+  .d-head .nm { font-size:22px; font-weight:700; }
+  .d-pill { font-size:12px; padding:4px 12px; border-radius:20px; font-weight:600; margin-left:auto; }
+  .d-card { background:#1e293b; border:1px solid #334155; border-radius:14px; padding:16px 18px; }
+  .d-row { display:flex; justify-content:space-between; font-size:13px; padding:6px 0; border-bottom:1px solid #243049; }
+  .d-row:last-child { border-bottom:0; }
+  .d-row .k { color:#94a3b8; }
+  .d-row .v { color:#e2e8f0; font-weight:500; }
+  .d-actions { display:flex; gap:10px; margin-top:4px; }
+  .d-actions button { flex:1; padding:11px 0; border:0; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; }
+  .go { background:#22c55e; color:#fff; } .stop { background:#dc2626; color:#fff; } .re { background:#475569; color:#fff; }
+  .d-actions button:disabled { background:#334155; color:#64748b; cursor:not-allowed; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#94a3b8; display:inline-block; }
+  .stop { background:#dc2626; } .restart { background:#475569; }
+  footer { padding:10px 24px; border-top:1px solid #243049; display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#64748b; }
+  footer .actions button { margin-left:8px; }
+  /* config view */
+  #configView { display:none; flex:1; flex-direction:column; padding:14px 24px; overflow:auto; }
+  .tabs { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .tab { background:#1e293b; border:1px solid #334155; color:#cbd5e1; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .tab.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .field { margin-bottom:12px; }
+  .field label { display:block; font-size:12px; color:#94a3b8; margin-bottom:4px; }
+  .field input, .field select { width:100%; padding:9px 10px; background:#0b1220; border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:13px; }
+  .keyrow { display:flex; gap:8px; } .keyrow input { flex:1; }
+  .note { font-size:11px; color:#94a3b8; background:#0b1220; border:1px solid #334155; border-radius:8px; padding:10px; margin:10px 0; }
+  .cstatus { font-size:12px; margin:8px 0; }
+  .bar { display:flex; gap:8px; margin-top:10px; }
+  .hidden { display:none !important; }
+  /* usage view */
+  #usageView { display:none; flex:1; flex-direction:column; padding:14px 24px; overflow:auto; }
+  .uperiod { display:flex; gap:8px; margin-bottom:12px; }
+  .ustats { display:flex; gap:12px; margin-bottom:14px; }
+  .ustat { flex:1; background:#1e293b; border:1px solid #334155; border-radius:10px; padding:12px; }
+  .ustat .k { font-size:11px; color:#94a3b8; }
+  .ustat .v { font-size:20px; font-weight:700; margin-top:4px; }
+  table.utab { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+  table.utab th, table.utab td { text-align:left; padding:7px 8px; border-bottom:1px solid #243049; }
+  .uunknown { color:#fbbf24; font-size:11px; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>AI Agent U盘版</h1>
+      <div class="sub">Portable Edition · 第三方统一启动器（不隶属 OpenAI / Anthropic 等官方）</div>
+      <span class="badge-ed">U盘版 · Portable</span>
+    </div>
+    <button class="btn btn-ghost" id="openUsage">用量</button>
+    <button class="btn btn-primary" id="openCfg">配置 API</button>
+  </header>
+
+  <!-- MAIN VIEW: aggregator sidebar + detail -->
+  <div id="mainView">
+    <aside id="side">
+      <div class="side-h">Agent 聚合台</div>
+      <div id="agentList"></div>
+      <div class="side-foot">
+        <button id="startAll" style="background:#22c55e;color:#fff">启动全部</button>
+        <button id="stopAll" style="background:#dc2626;color:#fff">停止全部</button>
+      </div>
+    </aside>
+    <section id="detail"></section>
+  </div>
+
+  <!-- CONFIG VIEW -->
+  <div id="configView">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h2 style="font-size:16px;">API 配置</h2>
+      <button class="btn btn-ghost" id="backBtn">← 返回</button>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="field"><label>Provider 类型</label>
+      <select id="cProvider">
+        <option value="openai-compatible">OpenAI-compatible</option>
+        <option value="anthropic-compatible">Anthropic-compatible</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="field hidden" id="customNameWrap"><label>Provider 名称</label><input id="cCustomName" placeholder="例如：my-provider" /></div>
+    <div class="field"><label>API Base URL</label><input id="cBaseUrl" placeholder="https://example.com/v1" />
+      <label id="baseUrlHint" class="hidden">手动修改后，切换厂商不会自动覆盖。</label>
+    </div>
+    <div class="field"><label>API Key（默认隐藏）</label>
+      <div class="keyrow">
+        <input id="cKey" type="password" placeholder="••••••••" autocomplete="off" />
+        <button class="btn btn-ghost" id="toggleKey">显示</button>
+      </div>
+    </div>
+    <div class="field"><label>Model（可直接输入，或拉取列表后选择）</label>
+      <div class="keyrow">
+        <input id="cModel" placeholder="例如：gpt-4o-mini" />
+        <select id="cModelList" style="flex:1"><option value="">（未拉取模型）</option></select>
+      </div>
+      <div class="keyrow" style="margin-top:6px;">
+        <button class="btn btn-ghost" id="fetchModelsBtn" disabled>拉取模型</button>
+        <button class="btn btn-primary" id="testProvBtn" disabled>测试连接</button>
+        <span id="modelMsg" style="font-size:11px;color:#94a3b8;align-self:center;"></span>
+      </div>
+      <div id="connMsg" style="font-size:12px;margin-top:6px;"></div>
+    </div>
+    <div class="cstatus" id="cStatus"></div>
+    <div class="note">API Key 将加密保存在当前 Windows 用户环境（DPAPI），不会写入 U 盘配置文件，也不会随 U 盘复制到其他电脑。<br>「验证连接」会向 Provider 发送 1 次真实请求（GET /models，不进行模型推理），不自动重试。<br>「拉取模型」= 1 次 GET 模型列表（10 秒超时）；「测试连接」= 1 次 POST Responses 请求（15 秒超时），两者都不会自动重试；输入框留空时使用已保存的密钥。</div>
+    <div class="bar">
+      <button class="btn btn-ghost" id="validateBtn">验证配置</button>
+      <button class="btn btn-primary" id="testConnBtn">验证连接</button>
+      <button class="btn btn-primary" id="saveBtn">保存</button>
+      <button class="btn btn-danger" id="clearBtn">清除 API Key</button>
+    </div>
+  </div>
+
+  <!-- USAGE VIEW -->
+  <div id="usageView">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h2 style="font-size:16px;">用量统计</h2>
+      <button class="btn btn-ghost" id="usageBackBtn">← 返回</button>
+    </div>
+    <div class="note" id="proxyPanel">
+      用量代理：<span id="proxyState" style="color:#94a3b8;">关闭</span>　
+      <button class="btn btn-primary" id="proxyToggleBtn">开启用量代理</button>
+      <div id="proxyBases" style="margin-top:8px;font-size:11px;color:#94a3b8;display:none;"></div>
+    </div>
+    <div class="uperiod" id="periodBar">
+      <button class="tab active" data-days="0">全部</button>
+      <button class="tab" data-days="1">今日</button>
+      <button class="tab" data-days="month">本月</button>
+      <button class="tab" data-days="7">7 天</button>
+      <button class="tab" data-days="30">30 天</button>
+    </div>
+    <div class="ustats">
+      <div class="ustat"><div class="k">请求</div><div class="v" id="uReq">–</div></div>
+      <div class="ustat"><div class="k">输入 Tokens</div><div class="v" id="uIn">–</div></div>
+      <div class="ustat"><div class="k">输出 Tokens</div><div class="v" id="uOut">–</div></div>
+      <div class="ustat"><div class="k">成本</div><div class="v" id="uCost">–</div></div>
+      <div class="ustat"><div class="k">价格未知</div><div class="v" id="uUnknown">–</div></div>
+    </div>
+    <h3 style="font-size:12px;color:#94a3b8;margin:6px 0 2px;">按 Agent</h3>
+    <table class="utab">
+      <thead><tr><th>Agent</th><th>请求</th><th>输入</th><th>输出</th><th>合计</th><th>成本</th></tr></thead>
+      <tbody id="uBody"></tbody>
+    </table>
+    <h3 style="font-size:12px;color:#94a3b8;margin:12px 0 2px;">按 Provider</h3>
+    <table class="utab">
+      <thead><tr><th>Provider</th><th>请求</th><th>输入</th><th>输出</th><th>合计</th><th>成本</th></tr></thead>
+      <tbody id="uProvBody"></tbody>
+    </table>
+    <h3 style="font-size:12px;color:#94a3b8;margin:12px 0 2px;">按 Model</h3>
+    <table class="utab">
+      <thead><tr><th>Model</th><th>请求</th><th>输入</th><th>输出</th><th>合计</th><th>成本</th></tr></thead>
+      <tbody id="uModelBody"></tbody>
+    </table>
+    <div class="bar" style="margin-top:12px;">
+      <button class="btn btn-ghost" id="expCsvBtn">导出 CSV</button>
+      <button class="btn btn-ghost" id="expJsonBtn">导出 JSON</button>
+      <button class="btn btn-ghost" id="togglePricingBtn">价格表</button>
+    </div>
+    <div id="pricingPanel" class="hidden" style="margin-top:10px;">
+      <div class="note" id="pricingList"></div>
+      <div class="field"><label>Provider（host，如 apihub.agnes-ai.com）</label><input id="pProvider" placeholder="apihub.agnes-ai.com" /></div>
+      <div class="field"><label>Model</label><input id="pModel" placeholder="agnes-2.5-flash" /></div>
+      <div class="keyrow">
+        <div class="field" style="flex:1;"><label>输入价 / 1M</label><input id="pIn" type="number" step="0.001" placeholder="0.00" /></div>
+        <div class="field" style="flex:1;"><label>输出价 / 1M</label><input id="pOut" type="number" step="0.001" placeholder="0.00" /></div>
+      </div>
+      <div class="field"><label>来源 source（必填，否则拒绝写入；不凭空定价）</label><input id="pSource" placeholder="https://官方价格页" /></div>
+      <div class="bar">
+        <button class="btn btn-primary" id="pSaveBtn">保存价格</button>
+      </div>
+    </div>
+    <div class="note">用量数据仅保存在本机（usage.jsonl），不含 Prompt、响应内容、API Key 或 Cookie。<br>
+      Agent 直连 Provider 的对话 Token 当前标记为 <b>NOT_OBSERVABLE</b>；这里统计的是启动器经本地代理可靠观察到的请求（OBSERVED）。价格未知时显示「价格未知」，绝不按 $0.00 估算。</div>
+    <div class="bar">
+      <button class="btn btn-danger" id="usageClearBtn">清空本地用量</button>
+    </div>
+  </div>
+
+  <footer>
+    <span id="ver">Launcher v…</span>
+    <div class="actions">
+      <button class="btn btn-ghost" id="logsBtn">日志</button>
+      <button class="btn btn-ghost" id="quitBtn">退出</button>
+    </div>
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let manifest, apiCfg = {}, currentTab = 'openclaw';
+let agents = [], agentStatuses = {}, selectedId = null;
+const tabMap = [['openclaw','OpenClaw'],['hermes','Hermes'],['codex','Codex'],['claudeCode','Claude Code']];
+const statusMeta = { STOPPED:['已停止','#94a3b8'], STARTING:['启动中…','#f59e0b'], RUNNING:['运行中','#22c55e'], STOPPING:['停止中…','#f59e0b'], ERROR:['错误','#ef4444'] };
+
+async function loadMain() {
+  const m = await window.launcher.getManifest();
+  if (!m.ok) { $('detail').innerHTML = '<div class="note">启动器配置损坏：' + (m.error||'') + '</div>'; return; }
+  $('ver').textContent = 'Launcher v' + m.launcherVersion;
+  manifest = m;
+  const rows = await window.launcher.probeAgents();
+  apiCfg = (await window.launcher.getApiConfig()).agents || {};
+  agents = rows.results || [];
+  if (!selectedId && agents.length) selectedId = agents[0].id;
+  renderSidebar(); renderDetail();
+  refreshStatuses();
+}
+
+function renderSidebar() {
+  const list = $('agentList'); list.innerHTML = '';
+  agents.forEach(a => {
+    const item = document.createElement('div');
+    item.className = 'agent-item' + (a.id === selectedId ? ' active' : '');
+    item.dataset.id = a.id;
+    const s = agentStatuses[a.id] || { status:'STOPPED' };
+    const [txt, color] = statusMeta[s.status] || statusMeta.STOPPED;
+    item.innerHTML = '<span class="dot"></span><div style="flex:1"><div class="nm"></div><div class="st"></div></div>';
+    item.querySelector('.nm').textContent = a.name;
+    item.querySelector('.st').textContent = (s.status==='RUNNING' && s.pid) ? ('运行中 · PID '+s.pid) : txt;
+    item.querySelector('.dot').style.background = color;
+    item.onclick = () => { selectedId = a.id; renderSidebar(); renderDetail(); };
+    list.appendChild(item);
+  });
+}
+
+function renderDetail() {
+  const d = $('detail');
+  const a = agents.find(x => x.id === selectedId);
+  if (!a) { d.innerHTML = '<div class="note">左侧选择一个 Agent。</div>'; return; }
+  const s = agentStatuses[a.id] || { status:'STOPPED', pid:null };
+  const [txt, color] = statusMeta[s.status] || statusMeta.STOPPED;
+  const cid = (a.id === 'claude-code') ? 'claudeCode' : a.id;
+  const cfg = apiCfg[cid] || {};
+  const running = s.status === 'RUNNING';
+  const busy = s.status === 'STARTING' || s.status === 'STOPPING';
+  d.innerHTML =
+    '<div class="d-head"><span class="big" style="background:'+color+';box-shadow:0 0 10px '+color+'"></span>' +
+    '<span class="nm"></span><span class="d-pill" style="background:'+color+'22;color:'+color+'">'+txt+'</span></div>' +
+    '<div class="d-card"><div class="d-row"><span class="k">版本</span><span class="v"></span></div>' +
+    '<div class="d-row"><span class="k">进程 PID</span><span class="v"></span></div>' +
+    '<div class="d-row"><span class="k">API 配置</span><span class="v"></span></div></div>' +
+    '<div class="d-actions">' +
+    '<button class="go" id="dStart" '+(running||busy?'disabled':'')+'>启动</button>' +
+    '<button class="stop" id="dStop" '+(!running&&s.status!=='STARTING'?'disabled':'')+'>停止</button>' +
+    '<button class="re" id="dRestart">重启</button></div>' +
+    '<div class="note">在此处控制该 Agent 的进程；右侧列表可随时点击切换到其他 Agent。</div>';
+  d.querySelector('.nm').textContent = a.name;
+  d.querySelector('.d-card .v').textContent = a.version || a.error || '—';
+  d.querySelectorAll('.d-row .v')[1].textContent = (s.pid || '—');
+  d.querySelectorAll('.d-row .v')[2].innerHTML = cfg.configured
+    ? '<span style="color:#6ee7b7">● 已配置（'+(cfg.maskedKey||'')+'）</span>'
+    : '<span style="color:#94a3b8">○ 未配置</span>';
+  $('dStart').onclick = async () => { await window.launcher.launch(a.id); refreshStatuses(); };
+  $('dStop').onclick = async () => { await window.launcher.stopAgent(a.id); refreshStatuses(); };
+  $('dRestart').onclick = async () => { await window.launcher.restartAgent(a.id); refreshStatuses(); };
+}
+
+$('startAll').onclick = async () => { await window.launcher.startAllAgents(); refreshStatuses(); };
+$('stopAll').onclick = async () => { await window.launcher.stopAllAgents(); refreshStatuses(); };
+
+async function refreshStatuses() {
+  try {
+    const res = await window.launcher.getAgentStatuses();
+    agentStatuses = (res && res.statuses) || {};
+  } catch(_) {}
+  renderSidebar(); renderDetail();
+}
+// push updates from main process
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.launcher.onAgentStatus) window.launcher.onAgentStatus(() => refreshStatuses());
+  // tray asked us to show a quit confirmation
+  if (window.launcher.onTrayQuit) window.launcher.onTrayQuit(askQuitChoice);
+  if (window.launcher.onAgentResync) window.launcher.onAgentResync(() => refreshStatuses());
+});
+function askQuitChoice() {
+  const choice = window.confirm('仍有 Agent 在运行。\n\n确定要退出 Launcher 吗？\n\n点「确定」= 仅退出 Launcher，保留 Agent 继续运行\n点「取消」= 留在 Launcher（如需同时停止 Agent，请先用「停止全部」）');
+  if (choice) window.launcher.requestQuit('keep-agents');
+}
+
+function renderTabs() {
+  const t = $('tabs'); t.innerHTML = '';
+  tabMap.forEach(([id,name]) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (id===currentTab?' active':''); b.textContent = name;
+    b.onclick = () => { currentTab = id; fillForm(); renderTabs(); };
+    t.appendChild(b);
+  });
+}
+// ---- Provider presets / model list / connectivity (2026-10) ----------------
+let PRESETS = {};   // { presetId: {label, protocolKind, baseUrl, keyPlaceholder, ...} }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])); }
+function normUrl(s) { return String(s || '').trim().replace(/\/+$/, '').toLowerCase(); }
+
+// 用 baseUrl 反查预设；匹配不到落 custom。
+function presetIdFor(cfg) {
+  const want = normUrl(cfg && cfg.baseUrl);
+  if (want) {
+    for (const [id, p] of Object.entries(PRESETS)) {
+      if (normUrl(p.baseUrl) && normUrl(p.baseUrl) === want) return id;
+    }
+  }
+  const kind = (cfg && cfg.provider) || '';
+  // anthropic-compatible 是唯一影响 env 注入的协议类型（ANTHROPIC_* vs OPENAI_*），
+  // 反查不到预设时保留 anthropic 而不是落 custom，避免保存时把协议语义改掉。
+  if (kind === 'anthropic-compatible') return 'anthropic';
+  if (kind === 'openai-compatible' && cfg && !cfg.baseUrl) return 'openai';
+  return 'custom';
+}
+function renderProviderOptions() {
+  const sel = $('cProvider'); sel.innerHTML = '';
+  for (const [id, p] of Object.entries(PRESETS)) {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = p.label || id;
+    sel.appendChild(o);
+  }
+  if (!sel.options.length) {
+    const o = document.createElement('option');
+    o.value = 'custom'; o.textContent = '自定义'; sel.appendChild(o);
+  }
+}
+function currentPreset() { return PRESETS[$('cProvider').value] || null; }
+function currentKeyPreset() { const p = currentPreset(); return p || { protocolKind: 'custom', keyPlaceholder: '', baseUrl: '' }; }
+function fillModelSelect(models) {
+  const sel = $('cModelList'); sel.innerHTML = '';
+  const o = document.createElement('option');
+  o.value = ''; o.textContent = models && models.length ? `（${models.length} 个模型，选择一个）` : '（未拉取模型）';
+  sel.appendChild(o);
+  for (const m of (models || [])) {
+    const op = document.createElement('option'); op.value = m; op.textContent = m; sel.appendChild(op);
+  }
+  const cur = $('cModel').value.trim();
+  if (cur && (models || []).includes(cur)) sel.value = cur;
+}
+function updateModelButtons() {
+  const hasBase = !!$('cBaseUrl').value.trim();
+  const hasKey = !!$('cKey').value.trim() || !!((apiCfg[currentTab] || {}).configured);
+  const hasModel = !!$('cModel').value.trim();
+  $('fetchModelsBtn').disabled = !(hasBase && hasKey);
+  $('testProvBtn').disabled = !(hasBase && hasKey && hasModel);
+}
+// BaseURL 提示只在用户手改过之后出现（dirty=1）；否则隐藏
+function updateDirtyHint() {
+  $('baseUrlHint').classList.toggle('hidden', $('cBaseUrl').dataset.dirty !== '1');
+}
+// 打开面板/切 provider 时：缓存 <24h 就直接填下拉（不发请求）
+async function loadCachedModels() {
+  try {
+    const r = await window.launcher.getModelCache({ providerId: $('cProvider').value, baseUrl: $('cBaseUrl').value.trim() });
+    if (r && r.ok && r.models && r.models.length) {
+      fillModelSelect(r.models);
+      const mins = Math.max(0, Math.round((r.ageMs || 0) / 60000));
+      const when = mins < 1 ? '刚刚' : (mins < 60 ? mins + ' 分钟前' : Math.round(mins / 60) + ' 小时前');
+      $('modelMsg').innerHTML = `<span style="color:#94a3b8">缓存 ${r.models.length} 个模型（${when}拉取）</span>`;
+      return true;
+    }
+    fillModelSelect([]);
+    return false;
+  } catch (_) { fillModelSelect([]); return false; }
+}
+
+function fillForm() {
+  const c = apiCfg[currentTab] || {};
+  const pid = presetIdFor(c);
+  renderProviderOptions();
+  $('cProvider').value = pid;
+  if (!PRESETS[$('cProvider').value] && $('cProvider').options.length) $('cProvider').value = $('cProvider').options[0].value;
+  $('cBaseUrl').value = c.baseUrl || '';
+  $('cBaseUrl').dataset.dirty = '0';
+  updateDirtyHint();
+  $('cModel').value = c.model || '';
+  $('cKey').value = '';
+  $('cKey').type = 'password'; $('toggleKey').textContent = '显示';
+  $('cKey').placeholder = (PRESETS[pid] && PRESETS[pid].keyPlaceholder) || '••••••••';
+  $('customNameWrap').classList.toggle('hidden', pid !== 'custom');
+  $('cStatus').innerHTML = c.configured
+    ? '<span class="apiYes">● 已配置（' + (c.maskedKey||'') + '）</span>'
+    : '<span class="apiNo">○ 未配置</span>';
+  $('modelMsg').innerHTML = '';
+  $('connMsg').innerHTML = '';
+  fillModelSelect([]);
+  loadCachedModels().then(() => updateModelButtons());
+  updateModelButtons();
+}
+// 落盘的 provider 始终是协议类型（protocolKind），预设 id 只留在渲染进程里
+function readForm() {
+  const p = currentKeyPreset();
+  return { id: currentTab, provider: p.protocolKind, baseUrl: $('cBaseUrl').value.trim(),
+           model: $('cModel').value.trim(), apiKey: $('cKey').value, enabled: true };
+}
+
+$('openCfg').onclick = async () => {
+  apiCfg = (await window.launcher.getApiConfig()).agents || {};
+  try { PRESETS = ((await window.launcher.getProviderPresets()) || {}).presets || {}; } catch (_) { PRESETS = {}; }
+  renderTabs(); fillForm();
+  $('mainView').style.display = 'none'; $('configView').style.display = 'flex';
+};
+$('backBtn').onclick = () => { $('configView').style.display = 'none'; $('mainView').style.display = 'flex'; loadMain(); };
+$('cProvider').onchange = () => {
+  const pid = $('cProvider').value;
+  const p = PRESETS[pid] || {};
+  $('customNameWrap').classList.toggle('hidden', pid !== 'custom');
+  $('cKey').placeholder = p.keyPlaceholder || '••••••••';
+  const url = $('cBaseUrl');
+  // 自定义 = 空地址，永远清空；其他预设只在用户没手动改过 BaseURL 时覆盖
+  if (!p.baseUrl) { url.value = ''; url.dataset.dirty = '0'; }
+  else if (url.dataset.dirty !== '1') { url.value = p.baseUrl; url.dataset.dirty = '0'; }
+  updateDirtyHint();
+  $('modelMsg').innerHTML = ''; $('connMsg').innerHTML = '';
+  loadCachedModels().then(() => updateModelButtons());
+  updateModelButtons();
+};
+$('cBaseUrl').oninput = () => { $('cBaseUrl').dataset.dirty = '1'; updateDirtyHint(); updateModelButtons(); };
+$('cKey').oninput = updateModelButtons;
+$('cModel').oninput = updateModelButtons;
+$('cModelList').onchange = () => { if ($('cModelList').value) { $('cModel').value = $('cModelList').value; updateModelButtons(); } };
+$('fetchModelsBtn').onclick = async () => {
+  const btn = $('fetchModelsBtn'); btn.disabled = true; btn.textContent = '拉取中…';
+  $('modelMsg').innerHTML = '<span style="color:#94a3b8">正在请求 GET ' + esc(currentKeyPreset().modelsEndpoint || '/models') + ' …</span>';
+  let r;
+  try {
+    r = await window.launcher.fetchModels({ id: currentTab, providerId: $('cProvider').value,
+      baseUrl: $('cBaseUrl').value.trim(), apiKey: $('cKey').value });
+  } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+  btn.textContent = '拉取模型';
+  if (r && r.ok) {
+    fillModelSelect(r.models);
+    $('modelMsg').innerHTML = '<span style="color:#6ee7b7">✓ 拉到 ' + r.models.length + ' 个模型</span>';
+  } else {
+    fillModelSelect([]);
+    $('modelMsg').innerHTML = '<span style="color:#f87171">✗ ' + esc((r && r.error) || '拉取失败') + '</span>'
+      + ((r && r.hint) ? '<br><span style="color:#94a3b8">' + esc(r.hint) + '</span>' : '');
+  }
+  updateModelButtons();
+};
+$('testProvBtn').onclick = async () => {
+  const btn = $('testProvBtn'); btn.disabled = true; btn.textContent = '测试中…';
+  $('connMsg').innerHTML = '<span style="color:#94a3b8">正在 POST Responses（1 次请求，约 15 秒超时）…</span>';
+  let r;
+  try {
+    r = await window.launcher.testProviderConnection({ id: currentTab, providerId: $('cProvider').value,
+      baseUrl: $('cBaseUrl').value.trim(), model: $('cModel').value.trim(), apiKey: $('cKey').value });
+  } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+  btn.textContent = '测试连接';
+  if (r && r.ok) {
+    $('connMsg').innerHTML = '<span style="color:#6ee7b7">✓ 连接正常（HTTP ' + r.status + ' · ' + r.latencyMs + 'ms）</span>';
+  } else {
+    $('connMsg').innerHTML = '<span style="color:#f87171">✗ ' + esc((r && r.error) || '连接失败') + '</span>'
+      + ((r && r.hint) ? '<div style="color:#94a3b8;font-size:11px;margin-top:2px">' + esc(r.hint) + '</div>' : '');
+  }
+  updateModelButtons();
+};
+$('toggleKey').onclick = () => {
+  const k = $('cKey'); const show = k.type === 'password';
+  k.type = show ? 'text' : 'password'; $('toggleKey').textContent = show ? '隐藏' : '显示';
+};
+$('validateBtn').onclick = async () => {
+  const r = await window.launcher.validateApiConfig(readForm());
+  $('cStatus').textContent = r.valid ? '✓ 格式校验通过（未发起网络请求）' : '✗ 格式错误：' + (r.errors||[]).join(', ');
+};
+$('testConnBtn').onclick = async () => {
+  const btn = $('testConnBtn'); btn.disabled = true; btn.textContent = '正在连接…';
+  $('cStatus').textContent = '正在连接 Provider（1 次请求，约 10 秒超时）…';
+  const r = await window.launcher.testConnection(currentTab);
+  btn.disabled = false; btn.textContent = '验证连接';
+  if (r.ok && r.ok !== undefined) {
+    if (r.ok === true) $('cStatus').innerHTML = '<span class="apiYes">✓ 连接成功 HTTP ' + r.status + ' · 延迟 ' + r.latencyMs + 'ms</span>';
+    else $('cStatus').innerHTML = '<span class="apiNo">✕ ' + (r.message || ('连接失败 HTTP ' + (r.status||'-'))) + '</span>';
+  } else {
+    $('cStatus').textContent = '✕ ' + (r.reason || '连接失败');
+  }
+};
+$('saveBtn').onclick = async () => {
+  const r = await window.launcher.saveApiConfig(readForm());
+  if (r.ok) { $('cStatus').innerHTML = '<span class="apiYes">✓ 已保存（' + (r.maskedKey||'') + '）</span>'; apiCfg[currentTab].configured = true; }
+  else $('cStatus').textContent = '✗ 保存失败：' + (r.errors ? r.errors.join(',') : (r.reason||''));
+};
+$('clearBtn').onclick = async () => {
+  if (!confirm('确定删除当前 Agent 的 API Key？此操作不会删除 Agent 本体。')) return;
+  const r = await window.launcher.clearApiKey(currentTab);
+  if (r.ok) { $('cKey').value=''; $('cStatus').innerHTML = '<span class="apiNo">○ 未配置</span>'; apiCfg[currentTab].configured = false; }
+};
+$('logsBtn').onclick = () => window.launcher.openLogs();
+$('quitBtn').onclick = () => window.launcher.quit();
+
+// ---- Phase 12/14: usage view ----------------------------------------------
+let usageDays = 0;
+function fmtN(n){ return (typeof n === 'number') ? n.toLocaleString('en-US') : '–'; }
+function fmtCost(c){
+  return (typeof c === 'number') ? ('$' + c.toFixed(6)) : '<span class="uunknown">价格未知</span>';
+}
+function daysThisMonth(){
+  const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return Math.ceil((now - start) / 86400000);
+}
+async function loadUsage(){
+  const days = (usageDays === 'month') ? daysThisMonth() : Number(usageDays);
+  const r = await window.launcher.usageDashboard(days);
+  if (!r.ok) { $('uBody').innerHTML = '<tr><td colspan="6">读取失败：' + (r.error||'') + '</td></tr>'; return; }
+  $('uReq').textContent = r.requests;
+  $('uIn').textContent = fmtN(r.inputTokens);
+  $('uOut').textContent = fmtN(r.outputTokens);
+  $('uCost').innerHTML = (r.cost === null || r.cost === undefined)
+    ? ((r.requests>0) ? '<span class="uunknown">价格未知</span>' : '–')
+    : ('$' + Number(r.cost).toFixed(6));
+  $('uUnknown').textContent = r.unpricedRequests;
+  const fill = (tbodyId, rows, labelKey) => {
+    const body = $(tbodyId); body.innerHTML = '';
+    (rows||[]).forEach(a => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td></td><td></td><td></td><td></td>';
+      tr.children[0].textContent = a.labelKey || a.key || a.agentId || '—';
+      tr.children[1].textContent = a.requests;
+      tr.children[2].textContent = fmtN(a.inputTokens);
+      tr.children[3].textContent = fmtN(a.outputTokens);
+      tr.children[4].textContent = fmtN(a.totalTokens);
+      tr.children[5].innerHTML = (typeof a.cost === 'number' && a.pricedRequests>0) ? ('$' + a.cost.toFixed(6)) : '<span class="uunknown">未知</span>';
+      body.appendChild(tr);
+    });
+    if (!(rows||[]).length) body.innerHTML = '<tr><td colspan="6" style="color:#64748b">暂无记录。</td></tr>';
+  };
+  fill('uBody', r.byAgent, 'agentId');
+  fill('uProvBody', r.byProvider);
+  fill('uModelBody', r.byModel);
+}
+$('openUsage').onclick = () => {
+  $('mainView').style.display='none'; $('configView').style.display='none'; $('usageView').style.display='flex';
+  refreshProxy(); loadUsage(); loadPricingList();
+};
+$('usageBackBtn').onclick = () => { $('usageView').style.display='none'; $('mainView').style.display='block'; loadMain(); };
+$('periodBar').querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  $('periodBar').querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); usageDays = b.dataset.days; loadUsage();
+});
+$('usageClearBtn').onclick = async () => {
+  if (!confirm('确定清空本地用量统计历史？此操作不会删除 API Key、Provider 配置或 Agent 本体。')) return;
+  await window.launcher.usageClear(); loadUsage();
+};
+$('expCsvBtn').onclick = async () => { const r = await window.launcher.usageExport('csv'); alert(r.ok ? '已导出 CSV：'+r.path : ('导出失败：'+(r.error||''))); };
+$('expJsonBtn').onclick = async () => { const r = await window.launcher.usageExport('json'); alert(r.ok ? '已导出 JSON：'+r.path : ('导出失败：'+(r.error||''))); };
+$('togglePricingBtn').onclick = () => { $('pricingPanel').classList.toggle('hidden'); };
+async function loadPricingList(){
+  const r = await window.launcher.pricingGet();
+  const el = $('pricingList');
+  if (!r.ok) { el.textContent = '价格表读取失败'; return; }
+  const provs = r.pricing.providers || {};
+  const lines = ['当前价格表（按 Provider + Model 匹配）：'];
+  for (const [p, pv] of Object.entries(provs)) {
+    for (const [m, mv] of Object.entries(pv.models||{})) {
+      lines.push('• '+p+' / '+m+' — 输入 $'+mv.input_per_1m+'/1M，输出 $'+mv.output_per_1m+'/1M（来源：'+(mv.source||'无')+'）');
+    }
+  }
+  if (lines.length === 1) lines.push('（空）未配置任何价格 → 成本保持“价格未知”，不会按 $0 估算。');
+  el.innerHTML = lines.join('<br>');
+}
+$('pSaveBtn').onclick = async () => {
+  const r = await window.launcher.pricingSet({
+    provider: $('pProvider').value, model: $('pModel').value,
+    input_per_1m: $('pIn').value, output_per_1m: $('pOut').value, source: $('pSource').value,
+  });
+  if (r.ok) { alert('已保存价格，历史用量将按新价格重算。'); loadPricingList(); loadUsage(); }
+  else alert('保存失败：' + (r.reason||''));
+};
+// proxy toggle
+async function refreshProxy() {
+  const s = await window.launcher.proxyStatus();
+  const state = $('proxyState'), btn = $('proxyToggleBtn'), bases = $('proxyBases');
+  if (s.running) {
+    state.innerHTML = '<span style="color:#6ee7b7;">运行中 ' + s.baseUrl + '</span>';
+    btn.textContent = '关闭用量代理';
+    bases.style.display = 'block';
+    bases.innerHTML = '将对应 Agent 的 Base URL 改为以下地址后，其真实 Token 才进入统计（不自动修改 Agent 配置）：<br>' +
+      (s.perAgent ? Object.entries(s.perAgent).map(([k,v])=> k + ' → <code>'+v+'</code>').join('<br>') : '');
+  } else {
+    state.textContent = '关闭';
+    btn.textContent = '开启用量代理';
+    bases.style.display = 'none';
+  }
+}
+$('proxyToggleBtn').onclick = async () => {
+  const s = await window.launcher.proxyStatus();
+  if (s.running) { await window.launcher.proxyStop(); }
+  else { const r = await window.launcher.proxyStart(); if (!r.ok) { alert('代理启动失败：' + (r.error||'')); } }
+  refreshProxy(); loadUsage();
+};
+
+try { loadMain(); } catch (e) { document.getElementById('status').textContent = '启动错误：' + (e && e.message ? e.message : e); }
+</script>
+</body>
+</html>

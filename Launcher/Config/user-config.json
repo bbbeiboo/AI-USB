@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "agents": {
+    "openclaw": {
+      "provider": "openai-compatible",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "qwen 3.8 27B",
+      "enabled": true
+    },
+    "hermes": {
+      "provider": "",
+      "baseUrl": "",
+      "model": "",
+      "enabled": false
+    },
+    "codex": {
+      "provider": "custom",
+      "baseUrl": "https://token.sensenova.cn/v1",
+      "model": "sensenova-6.8-flash-lite",
+      "enabled": true
+    },
+    "claudeCode": {
+      "provider": "",
+      "baseUrl": "",
+      "model": "",
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  // 构建脚本（vite.config.mts）的 TS 配置。
+  // 用 .mts 扩展名是为了让 Vite 按原生 ESM 加载该配置：renderer/ 下【没有】package.json
+  // （全项目只有 Launcher/App 一份，且它是 CommonJS），若写成 .ts，Vite 会按 CJS 上下文加载，
+  // 触发 "ESM syntax in a file loaded as CommonJS" 警告，未来 native loader 成为默认后会直接失败。
+  // 这里用 esnext + bundler，与 Vite 实际加载该配置的方式一致。
+  "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023"],
+    // vite.config.mts 用到 path / __dirname，需要 Node 类型
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  // 只检查根目录的构建配置文件
+  "include": ["vite.config.mts"]
+}

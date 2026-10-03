@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { getApiConfig, getProviderPresets } from '@/services/config-client'
 import type { ApiConfigEntry, ProviderPreset } from '@/types/launcher'
 import ApiConfigForm from './ApiConfigForm'
+import UsagePanel from './UsagePanel'
+import AboutPanel from './AboutPanel'
 
 /** 标签页 id；4.2 / 4.4 只需在这里补对应分支，不用改容器结构 */
 type SettingsTab = 'api' | 'usage' | 'about'
@@ -150,13 +152,11 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               <ApiConfigForm presets={presets} configs={configs} onSaved={load} />
             )
           ) : tab === 'usage' ? (
-            <p id="usage-tab-placeholder" className="text-sm text-muted-foreground">
-              用量统计：待 4.2 迁移。
-            </p>
+            // 4.2：用量统计面板（数据在面板挂载时才拉，见 UsagePanel 内部说明）
+            <UsagePanel />
           ) : (
-            <p id="about-tab-placeholder" className="text-sm text-muted-foreground">
-              关于：待 4.4 补。
-            </p>
+            // 4.4：关于页（只读信息 + 打开日志文件夹）
+            <AboutPanel />
           )}
         </div>
       </div>

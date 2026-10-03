@@ -569,7 +569,7 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 
 | 类别 | 文件 | 说明 |
 | --- | --- | --- |
-| 设置弹窗 | `renderer/src/components/settings/SettingsModal.tsx` | 弹窗壳 + 三个 tab（API / 用量 / 关于）；用量统计与关于页为占位，待 4.2 / 4.4 |
+| 设置弹窗 | `renderer/src/components/settings/SettingsModal.tsx` | 弹窗壳 + 三个 tab（API / 用量 / 关于）；用量与关于已由 4.2 / 4.4 落地（见 13.9） |
 | API 表单 | `renderer/src/components/settings/ApiConfigForm.tsx` | 预设/自定义切换、模型拉取、密钥校验；**P0 修复所在（13.2）** |
 | 连接测试 | `renderer/src/components/settings/ConnectionTestButton.tsx` | 保存配置 + 连通性测试 |
 | IPC 服务层 | `renderer/src/services/ipc.ts` · `config-client.ts` · `agent-client.ts` | `hasLauncher` 判空 + `safeInvoke` 统一兜底：IPC 未注入或主进程抛异常时返回 fallback，**绝不把异常抛给 React 组件** |
@@ -657,8 +657,8 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 5. 保存自定义 baseUrl → 重开弹窗仍是自定义值（dirty 标记不误清）。
 6. 密钥保存后重开：密文态显示、状态徽标正确；清除密钥后回到未配置态。
 7. 连接测试按钮：保存配置成功 / 失败两分支均有可读反馈。
-8. 用量统计 tab：显示占位（待 4.2 迁移）不报错。
-9. 关于 tab：显示占位（待 4.4 补）不报错。
+8. 用量统计 tab：天数切换（7/30/90）、汇总卡片、三个维度表、导出 CSV/JSON、二次确认清空；真实 exe 内应能看到用量数据（纯浏览器内降级为错误提示 + 重试属预期）。
+9. 关于 tab：产品 / 启动器版本 / 便携根目录 / 日志文件四行只读信息 + 「打开日志文件夹」按钮。
 10. 托盘：图标存在、菜单可恢复窗口；点关闭按钮 → 窗口隐藏进托盘、进程仍在（按设计）。
 11. **真实 `AI-Agent.exe` 窗口内点开设置弹窗，观察表单出现并可保存/重开** —— `browser_*` 工具无法附加 Electron 窗口，**「未实点，需用户手动确认」**。
 
@@ -696,3 +696,21 @@ claude-code = `E:\桌面\AI Agent 母盘`（正确）、hermes `·` 保持正确
 **B5（死代码清理）**：删除 `agent-process-manager.js` 中 `pidAlive()` 与 `stopTree()`
 （两处 `TODO: dead code` 标注 + 头部 TODO 行，共约 40 行）。全库引用核查仅 `_pm_test/harness-manifest.cjs:75`
 的日志字符串 `pidAliveAfter` 含同名子串、无实际调用。回归：语法 OK、根单测 36/36、`p16_pm_test.cjs` PASS。
+
+### 13.9 4.2 + 4.4 记录：用量统计面板 + 关于页（2026-10-03）
+
+**新增文件（零新依赖）**：
+- `renderer/src/services/usage-client.ts`：usage:dashboard / export / clear 的 safeInvoke 封装；
+- `renderer/src/components/settings/UsagePanel.tsx`：天数切换（7/30/90）+ 汇总卡片（请求 / 输入 / 输出 / 费用，
+  全部无定价时费用显示「—」而非伪造 0）+ byAgent / byProvider / byModel 三表 + 导出 CSV/JSON + 清空（两步确认）；
+- `renderer/src/components/settings/AboutPanel.tsx`：manifest:get 的只读信息（产品 / launcherVersion / 根目录 / 日志路径）+ 打开日志文件夹。
+
+**真实打开验证（vite preview 生产 bundle + 浏览器）**：
+- 用量 tab：`读取用量失败：IPC 不可用（preload.js 未加载）` + 重试 —— 与设置面板同一降级设计，无白屏；
+- 关于 tab：四行信息完整渲染（浏览器内版本/根目录为「—」属 IPC 降级预期）；
+- 三个 tab 来回切换后 `#root` children 恒为 1，关闭弹窗后会话界面完好、弹窗节点全部卸载；
+- 截图存证：`browser-screenshots/4.2-usage-tab-degraded.png`、`browser-screenshots/4.4-about-tab.png`。
+
+**四闸门**：语法 8/8、单测 36/36、selftest 4/4（B1 修复保持：中文路径与 `·` 均正确）、构建 EXIT=0 零警告；
+asar 检索：`usage-panel` / `about-open-logs` 命中、占位文案 `待 4.2 迁移` 零命中（新代码确认已入包）。
+**真实 exe 内的用量数据展示仍属 13.6 手动清单第 8/11 条（browser_* 无法附加 Electron）。**

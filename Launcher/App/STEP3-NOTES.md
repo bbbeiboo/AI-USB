@@ -1057,3 +1057,59 @@ usage.jsonl）——**stub 模式真·零净写入**；launcher.log 81649→8240
 7. **下一轮清单**：真接线（realAgentControlService 逐方法实现 + 新增 agent:sessions/output/input/export
    通道，**接线前需与用户确认 Agent 会话数据源**）→ 模型切换器/检查更新/帮助（真功能轮）→
    登录接线（13.6 第 1 条）→ OpenClaw 配对（用户人工）。
+
+---
+
+## 13.14 追加裁决：官方 logo + 切换器集成到工作台 logo（用户看图点单）
+
+### 13.14.1 需求与实现
+
+用户在看板截图上标注两条（原图 `E:\桌面\result-image-1.jpg`）：
+1. 「把这个切换按钮集成到 logo 上，并且使用哪个 agent 就显示哪个 agent 的 logo」（指向右上角切换钮）；
+2. 「把这个功能集中到 logo 上」（圈住工作台头部 logo 区）+ 文字「要官方 logo」。
+
+落地（12 文件，含 4 个资产）：
+- **切换器迁移**：`agent-switcher` 从顶栏移到**工作台头部 logo**——官方 logo + Agent 名 + chevron
+  组成一个按钮，点击 Popover 列出四 Agent（官方 logo + 状态点 + 置顶标记）切换；顶栏右侧只留设置齿轮。
+  侧栏/菜单内头像全部换官方 logo。`agent-switcher` / `agent-switcher-item-*` AutomationId 不变（位置变了）。
+- **新组件 `ui/agent-logo.tsx`**：`AgentLogo({agentId, short, size})` → `public/logos/<id>` 资产，
+  加载失败/未知 id 回退字母头像（离线不断图）。**坑**：vite `base: './'` 且 Electron 生产走 file://，
+  logo 路径必须**相对**（`logos/x.svg`）——首版写 `/logos/x.svg` 在 exe 里 404 全部回退字母
+  （file:// 下解析到盘根），浏览器 http 预览却正常——正是 file:// 特有陷阱，记入 13.14.3。
+- **资产**（public/logos/，共 ~21KB，全部来自官方渠道）：
+
+| Agent | 文件 | 官方来源 |
+| --- | --- | --- |
+| OpenClaw | openclaw.svg（龙虾渐变标，120 viewBox） | openclaw.ai 官网 favicon.svg |
+| Hermes | hermes.png（48×48） | hermes-agent.nousresearch.com 官网 icon |
+| Codex | codex.svg（OpenAI 结花 mark，currentColor） | github.com/openai/codex 官方仓库内 assets（SSH 克隆取件） |
+| Claude Code | claude-code.ico（Anthropic 标，48/32/16 三帧） | anthropic.com 官网 favicon.ico |
+
+**商标归属声明**：OpenClaw/Hermes(Nous Research)/Codex(OpenAI)/Claude Code(Anthropic) 的 logo
+版权与商标归各自项目所有；本工具为本地便携启动器，按用户明确要求以官方图标**指示性标识**对应
+Agent，不做品牌宣传、不修改再创作。13.13 硬规则 2「不拷第三方 logo」自本轮起被用户裁决显式取代
+（仅限这四个 Agent 标识；SF 字体/系统音效等其余红线不变）。
+
+### 13.14.2 验收
+
+- 四闸门：tsc 零错误、vite 构建成功、单测 50/50、打包 EXIT=0（selftest 未重跑——本轮只改渲染层资产与
+  组件，主进程零改动；打包后 asar 检索通过即代表产物完整）。
+- asar：`logos/openclaw.svg|hermes.png|codex.svg|claude-code.ico` 四路径全部命中；`not-wired-yet`=1；
+  新 bundle index-CaNcKQY3 在。
+- **真实 exe 实测**（实例 17796，归属吻合后操作）：
+  截图 13.14-real-exe-logos.png（OpenClaw 龙虾标上工作台+侧栏，顶栏仅品牌名+齿轮）→
+  点工作台 logo（UIA Expand）→ 点 agent-switcher-item-claude-code →
+  截图 13.14-real-exe-switched-claude.png（头部变 Anthropic 标；Popover 展开态四官方 logo +
+  状态点同框；侧栏/状态栏/输入框占位符同步为 Claude Code）。
+- **终态哈希 15/15 与 13.13 终态一致**（diff 仅 launcher.log +1722 字节 = 1 启动 + 1 关闭）——零净写入。
+- 浏览器侧未单独重截：本轮改动是资产路径与组件替换，http/file 两种协议下相对路径行为一致，
+  file://（更严格的一侧）已在 exe 实测覆盖；13.13 的浏览器 stub 演示结论不受影响。
+- 临时克隆（/tmp/codex-repo、claude-code-repo）用后即删，未拷任何仓库文件入库（logo 资产除外，
+  为用户裁决所需，来源已列）。
+
+### 13.14.3 新坑记录
+
+1. **file:// 相对路径陷阱**：vite `base:'./'` 下构建产物全部相对路径，但手写代码里的 `/logos/...`
+   绝对引用在 http 预览正常、file:// 生产 404——渲染层引用 public 资产一律写相对路径。
+2. **打包 EBUSY/EPERM**：electron-builder 清理 win-unpacked 前，必须先结束仍在运行的 exe 实例
+  （本轮 ffmpeg.dll EPERM 即此因）；目录本身被 shell 占用时改名绕过再重建（见 13.13 收尾）。

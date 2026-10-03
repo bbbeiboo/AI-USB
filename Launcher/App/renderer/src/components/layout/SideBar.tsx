@@ -3,7 +3,7 @@
  */
 import { Pin, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AgentAvatar } from '@/components/ui/agent-avatar'
+import { AgentLogo } from '@/components/ui/agent-logo'
 import { StatusDot } from '@/components/ui/status-badge'
 import type { AgentSummary, SessionMeta } from '@/services/agent-control-types'
 import { cn } from 'cn'
@@ -39,7 +39,7 @@ export default function SideBar({ agents, currentId, sessions, sessionId, onSwit
             )}
             onClick={() => void onSwitchAgent(a.id)}
           >
-            <AgentAvatar short={a.short} size="xs" />
+            <AgentLogo agentId={a.id} short={a.short} size="xs" />
             <span className="truncate text-[13px]">{a.name}</span>
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {a.pinned ? <Pin id={`agent-list-pin-${a.id}`} className="size-3 text-muted-foreground" strokeWidth={1.5} aria-label="已置顶" /> : null}

@@ -31,10 +31,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TopBar
-        agents={wb.agents}
-        current={wb.current}
         sessionTitle={wb.sessionTitle}
-        onSwitchAgent={(id) => void wb.switchAgent(id)}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="flex min-h-0 flex-1">

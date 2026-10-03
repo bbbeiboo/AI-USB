@@ -36,6 +36,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "cowsay": "^1.6.0",
     "tar": "^7.5.22"
   }
 }

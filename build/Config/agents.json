@@ -1,0 +1,93 @@
+{
+    "version":  1,
+    "launcherVersion":  "1.0.0",
+    "agents":  [
+                   {
+                       "id":  "openclaw",
+                       "name":  "OpenClaw",
+                       "enabled":  true,
+                       "expectedVersion":  "2026.9.5",
+                       "launcher":  "Build/Scripts/start-openclaw.ps1",
+                       "checker":  "Build/Scripts/check-openclaw-complete.ps1",
+                       "versionArgs":  [
+                                           "--version"
+                                       ],
+                       "exePath":  "Agents/OpenClaw/App/node_modules/.bin/openclaw.cmd",
+                       "exeArgs":  [],
+                       "isolatedEnv":  {
+                                           "OPENCLAW_STATE_DIR":  "Agents/OpenClaw/Data",
+                                           "OPENCLAW_CONFIG_PATH":  "Agents/OpenClaw/Config/config.yaml"
+                                       },
+                       "workspace":  "Agents/OpenClaw/Data/workspace",
+                       "configPath":  "Agents/OpenClaw/Config/config.yaml",
+                       "configAdapter":  "openclaw",
+                       "desktopAdapter":  "openclaw",
+                       "processToken":  "openclaw"
+                   },
+                   {
+                       "id":  "hermes",
+                       "name":  "Hermes",
+                       "enabled":  true,
+                       "expectedVersion":  "0.21.4",
+                       "launcher":  "Build/Scripts/start-hermes.ps1",
+                       "checker":  "Build/Scripts/check-hermes.ps1",
+                       "versionArgs":  [
+                                           "--version"
+                                       ],
+                       "exePath":  "Agents/Hermes/bin/hermes.exe",
+                       "exeArgs":  [],
+                       "isolatedEnv":  {
+                                           "HERMES_HOME":  "Agents/Hermes"
+                                       },
+                       "workspace":  "Agents/Hermes",
+                       "configPath":  "Agents/Hermes/config.yaml",
+                       "configAdapter":  "hermes",
+                       "desktopAdapter":  "hermes",
+                       "processToken":  "Hermes\\bin\\hermes.exe"
+                   },
+                   {
+                       "id":  "codex",
+                       "name":  "Codex",
+                       "enabled":  true,
+                       "expectedVersion":  "0.156.1",
+                       "launcher":  "Build/Scripts/start-codex.ps1",
+                       "checker":  "Build/Scripts/check-codex.ps1",
+                       "versionArgs":  [
+                                           "--version"
+                                       ],
+                       "exePath":  "Agents/Codex/App/node_modules/.bin/codex.cmd",
+                       "exeArgs":  [],
+                       "isolatedEnv":  {
+                                           "CODEX_HOME":  "Agents/Codex"
+                                       },
+                       "workspace":  "Agents/Codex",
+                       "configPath":  null,
+                       "configAdapter":  "codex",
+                       "desktopAdapter":  "codex",
+                       "processToken":  "Codex\\App\\node_modules\\.bin\\codex.cmd"
+                   },
+                   {
+                       "id":  "claude-code",
+                       "name":  "Claude Code",
+                       "enabled":  true,
+                       "expectedVersion":  "2.1.280",
+                       "launcher":  "Build/Scripts/start-claude-code.ps1",
+                       "checker":  "Build/Scripts/check-claude-code.ps1",
+                       "versionArgs":  [
+                                           "--version"
+                                       ],
+                       "exePath":  "Agents/ClaudeCode/App/node_modules/.bin/claude.cmd",
+                       "exeArgs":  [
+                                       "--bare"
+                                   ],
+                       "isolatedEnv":  {
+                                           "CLAUDE_CONFIG_DIR":  "Agents/ClaudeCode"
+                                       },
+                       "workspace":  "Agents/ClaudeCode",
+                       "configPath":  null,
+                       "configAdapter":  "claude-code",
+                       "desktopAdapter":  "claude-code",
+                       "processToken":  "claude.cmd"
+                   }
+               ]
+}

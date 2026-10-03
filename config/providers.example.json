@@ -1,0 +1,17 @@
+{
+  "openai": {
+    "enabled": false,
+    "baseUrl": "https://api.openai.com/v1"
+  },
+  "anthropic": {
+    "enabled": false,
+    "baseUrl": "https://api.anthropic.com"
+  },
+  "agnes": {
+    "enabled": false,
+    "baseUrl": "https://apihub.agnes-ai.com/v1",
+    "anthropicBaseUrl": "https://apihub.agnes-ai.com",
+    "apiKey": "",
+    "model": "agnes-2.5-flash"
+  }
+}

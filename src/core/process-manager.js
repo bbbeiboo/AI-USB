@@ -52,6 +52,77 @@ export function spawnDetached(command, args = [], cwd = '') {
   return child.pid;
 }
 
+/**
+ * 在新控制台窗口中启动 Agent（用于 TUI 交互式 Agent）。
+ *
+ * Windows 上必须用 `cmd /c start "" powershell -NoExit -File <script>` 这一形态：
+ * Node 的 spawn（detached + stdio:'ignore'）不会创建新控制台，无头 TUI 会因
+ * "stdin is not a terminal" 立即退出。此写法与 GUI 的 agent-process-manager.js 一致。
+ *
+ * @param {string} scriptAbs  启动脚本绝对路径（.ps1，负责设置便携环境后拉起 Agent）
+ * @returns {number|null} 启动器的 PID（powershell -NoExit 进程）
+ */
+export function spawnNewConsole(scriptAbs) {
+  if (WINDOWS) {
+    const child = spawn('cmd.exe',
+      ['/c', 'start', '', 'powershell.exe',
+       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', scriptAbs],
+      { detached: true, stdio: 'ignore', windowsHide: false });
+    child.unref();
+    return child.pid;
+  }
+  // POSIX：无窗口概念，退回 detached spawn
+  const child = spawn(scriptAbs, [], { detached: true, stdio: 'ignore' });
+  child.unref();
+  return child.pid;
+}
+
+/**
+ * 在新控制台窗口中直接启动命令（无 ps1 脚本时的兜底）。
+ * 返回的 PID 是 cmd.exe，其 /k 窗口保持打开，Agent 作为子进程运行。
+ */
+export function spawnConsoleCommand(command, args = [], cwd = '') {
+  if (WINDOWS) {
+    const cdPart = cwd ? `cd /d "${cwd}" && ` : '';
+    const cmdPart = `"${command}"`;
+    const argsStr = args.length > 0 ? ' ' + args.map((a) => `"${a}"`).join(' ') : '';
+    const fullCmd = `${cdPart}${cmdPart}${argsStr}`;
+    const child = spawn('cmd.exe', ['/k', fullCmd], {
+      detached: true, stdio: 'ignore', windowsHide: false,
+    });
+    child.unref();
+    return child.pid;
+  }
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd: cwd || undefined });
+  child.unref();
+  return child.pid;
+}
+
+/**
+ * 按命令行特征查找最近创建的匹配进程 PID（用于控制台窗口 Agent 的 PID 追踪）。
+ * @param {string} signature 命令行中必须包含的特征字符串，如 'codex.js'
+ * @returns {number|null} 最近匹配的 PID，未找到返回 null
+ */
+export function findAgentBySignature(signature) {
+  if (!WINDOWS) return null;
+  try {
+    // 必须排除执行本次查询的 powershell 自身（其命令行含 signature，且创建时间最新）。
+    const out = execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        `(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*${signature}*' } | Sort-Object -Property CreationDate -Descending | Select-Object -First 1 -ExpandProperty ProcessId)`,
+      ],
+      { encoding: 'utf8', windowsHide: true, timeout: 8000 },
+    );
+    const pid = Number.parseInt(out.trim(), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 结束整个进程树（Windows 用 taskkill /T，POSIX 用进程组信号）。 */
 export async function terminateTree(pid) {
   if (!isProcessAlive(pid)) return true;

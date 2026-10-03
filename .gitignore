@@ -31,3 +31,26 @@ Launcher/Logs/
 # Vite 构建产物（renderer/.gitignore 已忽略 dist，这里再兜一层，
 # 防止将来从仓库根执行 git add 时漏网）
 Launcher/App/renderer/dist/
+
+# --- 明文密钥治理（4.1.4.6，B+ 方案）---
+# config/providers.json 含内置兜底供应商的明文 API Key：从索引移除并永久忽略，
+# 防止将来 git add -A 误带；分发/参考模板见 config/providers.example.json
+config/providers.json
+# 本地备份（如 config/providers.json.bak-20261003）同样不进库
+config/*.bak-*
+
+# --- 构建产物 / 运行态目录（4.1.4.6，.gitignore 补全）---
+# 注意：磁盘真实目录名是小写 build / agents，不是 Build / Agents
+# 底座资产 build/Scripts/、build/Config/ 由版本控制纳管，此处【故意不忽略】
+build/Release/
+build/Audit/
+build/Downloads/
+build/Intermediate/
+
+Runtime/
+agents/
+workspace/
+UserData/
+browser-screenshots/
+# 空占位目录，语义为备份区，预置忽略以防将来被写入后误带
+backup/

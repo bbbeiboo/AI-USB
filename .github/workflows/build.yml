@@ -65,6 +65,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+        env:
+          # CI runner 上 tasklist/taskkill 偶尔有延迟，给测试更多余量
+          CI: 'true'
 
       - name: Build
         run: ${{ matrix.script }}

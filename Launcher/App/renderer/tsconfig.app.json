@@ -12,7 +12,11 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
-    /* 路径别名：'@/xxx' -> renderer/src/xxx（必须与 vite.config.mts 的 resolve.alias 一致） */
+    /* 路径别名：'@/xxx' -> renderer/src/xxx（必须与 vite.config.mts 的 resolve.alias 一致）
+       说明：baseUrl 在 TypeScript 6.0 被标记为 deprecated（TS 7.0 才会移除），
+       但 shadcn CLI 解析 "@/" 别名时仍依赖它，所以保留并在此显式声明忽略该项弃用告警，
+       否则 npx tsc --noEmit 会在这一行报 TS5101（与业务代码无关）。 */
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] },
 

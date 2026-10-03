@@ -15,6 +15,7 @@ import ModelSelector from '@/components/topbar/ModelSelector'
 import SettingsButton from '@/components/topbar/SettingsButton'
 import MessageList from '@/components/chat/MessageList'
 import ChatInput from '@/components/chat/ChatInput'
+import SettingsModal from '@/components/settings/SettingsModal'
 
 /** 假 AI 回复文本：用于演示"逐字追加"的流式效果（不连接任何 IPC） */
 function fakeReply(input: string): string {
@@ -38,6 +39,13 @@ export default function App() {
   const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS)
   const [selectedConvId, setSelectedConvId] = useState<string | null>(CONVERSATIONS[0]?.id ?? null)
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES)
+  /*
+   * 设置弹窗开关。
+   * 为什么放在 App 根节点：两处入口（顶栏 ⚙ 与侧栏「设置」）分属不同子树，
+   * 只有共同祖先能同时驱动它们，避免各挂各的弹窗实例。
+   * 初始 false —— 启动阶段不发任何 IPC（约束 7：打开时才拉数据）。
+   */
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
 
   // 持有流式定时器句柄：组件卸载时必须清理，否则会在已卸载组件上 setState
   const timerRef = useRef<number | null>(null)
@@ -103,7 +111,7 @@ export default function App() {
           onSelect={handleSelectConversation}
         />
         <div className="border-t border-border p-3">
-          <SettingsButton showLabel />
+          <SettingsButton showLabel onClick={() => setSettingsOpen(true)} />
         </div>
       </aside>
 
@@ -113,7 +121,7 @@ export default function App() {
           <AgentSelector agents={AGENTS} value={agentId} onChange={setAgentId} />
           <ModelSelector models={MODELS} value={model} onChange={setModel} />
           <div className="ml-auto">
-            <SettingsButton />
+            <SettingsButton onClick={() => setSettingsOpen(true)} />
           </div>
         </header>
 
@@ -126,6 +134,16 @@ export default function App() {
           <ChatInput onSend={handleSend} />
         </footer>
       </main>
+
+      {/*
+        ===== 设置弹窗（4.1.4 接线） =====
+        挂在根节点、三栏布局之后：组件内部是 fixed inset-0，完全脱离文档流，
+        不参与 aside / main 的 flex 排布（约束 6）。
+        根 div 的 overflow-hidden 不会裁剪它 —— overflow 只作用于非 fixed 后代，
+        除非祖先自带 transform / filter / contain 建了新的包含块，本层没有这些属性。
+        未打开时组件直接 return null，DOM 里不留空壳。
+      */}
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }

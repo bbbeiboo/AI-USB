@@ -35,10 +35,18 @@ export const DEFAULT_CONFIG = {
   },
 };
 
+// Windows 编辑器（记事本 / VS Code 的 "UTF-8 with BOM"）会在文件头写入 U+FEFF。
+// JSON.parse 遇到它会直接抛错，而下面的 catch 会把整份配置静默换成默认值 —— 先剥掉 BOM。
+// 与 Launcher/App/json-util.js 的 stripBom 语义一致；两套架构各自独立（不同 package.json
+// 与 node_modules），因此这里保留一份本地实现而不跨树引用。
+function stripBom(text) {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
 function readJson(file) {
   const p = path.join(CONFIG_DIR(), file);
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return JSON.parse(stripBom(fs.readFileSync(p, 'utf8')));
   } catch {
     return null;
   }

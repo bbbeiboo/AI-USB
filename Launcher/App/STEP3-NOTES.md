@@ -380,3 +380,180 @@ renderer/src/
 （表现为 `getComputedStyle(document.documentElement).getPropertyValue('--primary')` 为空、身体背景透明），
 而**同一份代码 `vite build` 的产物是正确的**。重启 dev server 后一切正常。
 **排查口诀**：主题/样式异常时，先把 dev server 重启一遍，再怀疑代码；并可用"构建产物里有没有该变量"来区分是代码问题还是服务陈旧。
+
+---
+
+## 十二、第3.7步：保持旧启动流程可用 + 整体复核 + 真打包验证
+
+### 12.1 旧启动流程复核（3.7.1）
+
+| 复核项 | 结果 |
+| --- | --- |
+| 旧 UI 入口文件 | ✅ `Launcher/App/index.html` 仍在，35,741 B，未被本次改动触碰 |
+| 后端 8 个 js | ✅ main.js / preload.js / auth-service.js / ipc-auth.js / json-util.js / agent-process-manager.js / usage.js / usage-proxy.js 全部存在 |
+| `resolveLoadTarget()` 三分支 | ✅ dev(5173) / prod(distIndex, fallback=false) / prod(dist 缺失 → 旧 index.html, fallback=true) |
+| 两个生产分支都落日志 | ✅ `Event=Window LoadFile file=<f> fallback=<bool>` |
+| preload IPC 暴露 | ✅ 共 41 个方法；其中 auth 5 个（register/login/verify/logout/status） |
+| auth 初始化 | ✅ `auth.init({root, log})` + `registerAuthIpc({ipcMain, auth, log})`，包在 try/catch 内，失败只记日志不阻塞启动 |
+| 打包白名单 | ✅ `build.files` 同时含 `index.html` 与 `renderer/dist/**/*`，两条分支打包后都可用 |
+
+### 12.2 打包与 asar 内容核查（3.7.2 / 3.7.3）
+
+- 命令：`npm run build:app -- --dir` → **EXIT=0**
+- 产物：`Build/Release/Windows-x64/win-unpacked/`（AI-Agent.exe 245,956,608 B）、`app.asar` **2,697,596 B**、portable 单文件 `AI-Agent.exe` **108,517,940 B**
+- asar 条目总数 **826**，顶层仅 11 项：
+  `agent-process-manager.js / auth-service.js / index.html / ipc-auth.js / json-util.js / main.js / package.json / preload.js / renderer / usage.js / usage-proxy.js`
+- `renderer/` 下只有 `dist/`：`index.html`(631 B) · `favicon.svg` · `icons.svg` · `assets/index-Bcf-m93q.css` · `assets/index-Dv0T4jAM.js`
+  → 与 `npm run build:web` 重新产出的文件名**完全一致**，说明 asar 内的前端产物就是当前源码的构建结果
+
+**✅ 应存在（全部命中）**
+
+| 条目 | 结果 |
+| --- | --- |
+| `renderer/dist/index.html` + `assets/*.js` + `assets/*.css` | ✅ 1 js / 1 css |
+| 9 个后端入口 js（含旧 `index.html`） | ✅ 10/10 |
+| `node_modules/better-sqlite3` | ✅ 92 个文件 |
+| `node_modules/bcryptjs` | ✅ 8 |
+| `node_modules/jsonwebtoken` | ✅ 15 |
+| `node_modules/electron-store` | ✅ 3 |
+| `node_modules/tree-kill` | ✅ 4 |
+| 传递依赖 | ✅ 共 **39** 个顶层包：ajv · ajv-formats · atomically · buffer-equal-constant-time · conf · debounce-fn · dot-prop · ecdsa-sig-formatter · env-paths · fast-deep-equal · fast-uri · json-schema-traverse · json-schema-typed · jwa · jws · lodash.includes/isboolean/isinteger/isnumber/isplainobject/isstring/once · mimic-function · ms · node-addon-api · require-from-string · safe-buffer · semver · stubborn-fs · stubborn-utils · tagged-tag · type-fest · uint8array-extras · when-exit |
+
+**❌ 不应存在（全部确认不存在）**
+
+`renderer/src` · `renderer/node_modules` · `node_modules/react` · `node_modules/react-dom` · `node_modules/vite` ·
+`node_modules/typescript` · `node_modules/tailwindcss` · `node_modules/@tailwindcss` · `node_modules/cn` ·
+`node_modules/radix-ui` · `node_modules/lucide-react` · `node_modules/tw-animate-css` ·
+`node_modules/class-variance-authority` · `node_modules/@vitejs` · `node_modules/electron` · `node_modules/electron-builder` —— **16/16 全部 ABSENT**。
+
+> **修正一条原本写错的验收清单**：最初的 3.7.3 清单把 `cn` / `radix-ui` / `lucide-react` / `tw-animate-css`
+> 列为"asar 内应存在"，同时又要求"node_modules/react 不应存在"。这两条互相矛盾——React 与上述四者
+> **都是 devDependencies**，会被 Vite 打包进 `renderer/dist/assets/*.js`，因此**都不应出现在 asar 里**。
+> 判定标准即：asar 内只应有 `dependencies`（及其传递依赖）。
+
+### 12.3 asar.unpacked 原生模块校验（3.7.4）
+
+路径 `win-unpacked/resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds/`，共 **8** 个平台文件：
+
+| 文件 | 字节 |
+| --- | --- |
+| darwin-arm64.node | 1,980,736 |
+| darwin-x64.node | 1,982,880 |
+| linux-arm64.node | 2,066,328 |
+| linux-x64.node | 2,226,168 |
+| linuxmusl-arm64.node | 2,312,112 |
+| linuxmusl-x64.node | 2,435,680 |
+| win32-arm64.node | 1,903,104 |
+| **win32-x64.node** | **1,989,632** ✅ 与预期一致 |
+
+unpacked 下除 better-sqlite3 外无其他目录，即没有把无关模块误外置。
+
+### 12.4 打包产物自检（3.7.5）
+
+`win-unpacked/AI-Agent.exe --selftest` → **EXIT=0**，`SELFTEST_JSON.ok=true`，4/4 **READY**
+（OpenClaw 2026.9.5 / Hermes v0.21.4 / codex-cli 0.156.1 / claude-code portable-env）。
+> 注：控制台回显里 `PORTABLE_ROOT` 一行出现乱码，是 PowerShell 以 GBK 读取子进程 UTF-8 重定向文件导致的**显示乱码**，
+> 不是路径错误；同一路径在主进程日志与 UI 中均正常（非 ASCII 工作目录下的已知回显问题）。
+
+**portable 单文件 `AI-Agent.exe` 的补充结论**：它同样能执行 `--selftest` 并以 **EXIT=0** 退出
+（日志可见 `Event=Auth Ready` + `Event=AuthIpc Registered`，ROOT 也正确解析到 U 盘目录），
+但 electron-builder 的 portable bootstrap **不转发子进程 stdout**，因此 `SELFTEST_JSON` 捕获不到，
+包装进程的退出码也不等于内层进程的退出码。**要拿到可断言的自检输出，必须用 `win-unpacked/AI-Agent.exe`。**
+
+### 12.5 产物启动 + 三栏布局（3.7.6）
+
+两条路径都验证了：
+
+1. **真打包产物** `win-unpacked/AI-Agent.exe`（`app.isPackaged=true`）：
+```
+Event=Window LoadFile file=...\resources\app.asar\renderer\dist\index.html fallback=false
+Event=Window Bounds width=1281 height=801 resizable=true
+Event=Window DidFinishLoad url=file:///E:/.../app.asar/renderer/dist/index.html
+```
+2. **源码树 prod 分支** `scripts/dev-launcher.ps1 -Mode prod`（`NODE_ENV=production`）：
+```
+Event=Window LoadFile file=...\Launcher\App\renderer\dist\index.html fallback=false
+```
+
+两种情况下 `Event=Auth Ready` 与 `Event=AuthIpc Registered channels=...` 均照常输出，说明打包后登录层仍然装配成功。
+视觉存证：`browser-screenshots/step3-7-packaged-prod.png` —— 标题栏「AI Agent 启动器」、
+左栏（新建会话 + 今天/昨天/更早分组 + 底部设置）、顶栏（Agent ▼ / 模型 ▼ / ⚙）、
+消息区（用户右侧深色气泡 + AI 左侧浅色气泡）、底栏输入框「输入消息，Enter 发送，Shift+Enter 换行」+ 发送按钮，全部正常。
+
+**窗口尺寸 1281×801 的解释（与 3.4 结论一致）**：`getBounds()` 返回的是 DIP。本机为 **150% 缩放**，
+因此窗口物理表面是 1921×1201，DIP 即 1281×801 —— 属于 DPI 换算而非布局错误。
+
+### 12.6 回退分支验证（3.7.7）
+
+> 注意：`renderer/dist` 已打进 asar，**改磁盘上的 dist 不会影响已打包产物**。
+> 因此回退分支必须用源码树 prod 模式验证（`app.isPackaged=false` + `NODE_ENV=production`），代码路径与打包后完全一致。
+
+| 步骤 | 结果 |
+| --- | --- |
+| 基线 | `renderer/dist` 存在、`dist.bak` 不存在 |
+| `Rename-Item renderer\dist → renderer\dist.bak` | ✅ dist_exists=False / bak_exists=True |
+| `dev-launcher.ps1 -Mode prod` | `Event=Window LoadFile file=...\Launcher\App\index.html fallback=true` ✅ |
+| 窗口标题 | `AI Agent U盘版`（旧页面的 `<title>`）→ 证明旧 HTML 真正解析并渲染 |
+| `DidFinishLoad` | ✅ `file:///.../Launcher/App/index.html` |
+| 视觉存证 | `browser-screenshots/step3-7-fallback-old-index.png`（旧版 Agent 聚合台完整可用） |
+| **恢复** | ✅ `dist.bak → dist`，dist_exists=True / bak_exists=False / dist/index.html 存在 |
+
+**结论**：新前端缺失时旧启动器可无缝顶上，两条 UI 路径互不破坏。
+
+### 12.7 四闸门复跑（3.7.8）
+
+| 闸门 | 命令 | 结果 |
+| --- | --- | --- |
+| 语法 | `node --check` × 8 个后端 js | ✅ 8/8 EXIT=0 |
+| 构建 | `npm run build:web` | ✅ EXIT=0，2015 modules，CSS 33.05 kB / JS 356.69 kB，零警告 |
+| 自检 | `npm run selftest` | ✅ 4/4 READY，退出码 0 |
+| 单测 | `node --test tests/*.test.js` | ✅ 36 tests / 36 pass / 0 fail |
+
+打包 → 重建 → 复跑闭环，三项历史指标（8/8、4/4、36/36）全部保持。
+
+### 12.8 【环境坑合集】
+
+#### 12.8.1 150% DPI 下截取 Electron 窗口会被裁剪
+
+用 `GetWindowRect` + `PrintWindow` 抓窗口时，若不先声明进程 DPI 感知：
+- 未感知的 PowerShell 拿到的是**虚拟化后的 DIP 矩形**（1281×801），
+- 而 `PrintWindow` 实际写入的是**物理像素**，
+- 结果只截到窗口左上角 1281×801 的物理区域（150% 下相当于裁剪掉右侧与底部各约 1/3），
+  表现为"侧栏看起来有 390px 宽""底部输入框不见了"这类假故障。
+
+**解决**：抓图前先 `[user32]::SetProcessDPIAware()`，再取矩形，得到的 1921×1201 才是完整窗口。
+留存的工具脚本：`Build/Release/Windows-x64/_verify/capture-window.ps1`（第一个参数=输出 png，第二个参数=进程名）。
+
+#### 12.8.2 【后续 CI 固定约定】自检断言入口必须是 `win-unpacked/AI-Agent.exe`
+
+electron-builder 的 **portable 单文件**（`Build/Release/Windows-x64/AI-Agent.exe`）在启动时会先自解包、
+再由 bootstrap 拉起内层进程，这条链路有两个不可控点：
+1. **bootstrap 不转发内层进程的 stdout** —— 因此 `SELFTEST_JSON` 采集不到；
+2. **bootstrap 的退出码 ≠ 内层进程的退出码** —— 实测无论内层结果如何都可能返回 0。
+
+所以：**凡是需要断言 `SELFTEST_JSON` 的场景（CI、闸门、回归），一律用 `win-unpacked/AI-Agent.exe --selftest`**；
+portable 单文件只做「能启动 + 日志出现 `Event=Auth Ready` / `Event=AuthIpc Registered`」这类弱断言。
+另需注意：运行前必须清除 DSH 宿主注入的 `ELECTRON_RUN_AS_NODE`（见第五节），并用 `Start-Process -Wait` 采集退出码。
+
+#### 12.8.3 selftest 控制台里 `PORTABLE_ROOT` 显示乱码是显示层问题（勿重复排查）
+
+现象：`SELFTEST_JSON` 经 `Start-Process -RedirectStandardOutput` 写入临时文件后，
+PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-8 内容，
+于是 `E:\桌面\AI Agent 母盘` 显示成 `E:\妗岄潰\AI Agent 姣嶇洏` / `锟斤拷` 一类乱码。
+**这是回显编码问题，不是路径错误、不是 selftest 失败**：同一时刻 `Launcher/Logs/launcher.log` 与 UI 中的路径均完全正常。
+排查时不要据此怀疑便携根目录解析逻辑；要看真实路径，请直接读 `launcher.log` 或用 `-Encoding UTF8` 显式解码。
+
+### 12.9 遗留约定与注意事项
+
+1. **`renderer/components.json` 是手写的**（shadcn CLI 因 `renderer/` 下无 `package.json` 而拒绝执行）。
+   内容对齐 `style=new-york` / `baseColor=slate` / `cssVariables=true` / `iconLibrary=lucide` / `@/` 别名。
+   **未来升级 shadcn（`npx shadcn@latest`）时，必须人工比对该文件与新版 CLI 生成的默认值**，
+   不要直接让 CLI 覆写，否则会丢掉本仓库的别名与 Tailwind v4 约定。
+2. **cn 导入约定**：自写组件统一从 **`@/lib/utils`** 导入（转发层 `export { cn } from 'cn'`）；
+   第三方 shadcn 组件保留其原始的 **包导入 `import { cn } from "cn"`**。
+   新增自写组件时请沿用前者，重新 `add` 的 shadcn 组件不要手改其导入，避免未来两套风格混乱。
+3. **旧 `index.html` 必须继续留在 `build.files` 白名单里**——它是回退分支的唯一 UI，
+   任何"清理陈旧文件"的动作都不要删它。
+4. `build:web` 后 `renderer/dist` 的文件名带内容哈希；asar 内的哈希与重新构建一致，
+   可作为"打包产物是否对应当前源码"的快速校验手段。
+

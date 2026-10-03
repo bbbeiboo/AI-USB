@@ -1,18 +1,13 @@
 /**
- * 工作台（规范 §7 主区）：头部（大头像+名称+徽标+生命周期组）→ 输出工具条 →
- * 输出流（stub 驱动，含流式条目）→ 底部输入行。
+ * 工作台（规范 §7 主区，13.16 更新）：
+ * 头部启停栏已删除（用户裁决：开机自启全部 Agent，启停控件随之移除）——
+ * 布局 = 输出工具条（会话名 + 模型 chip + 重新生成/清空/复制/导出）→ 输出流 → 输入行。
+ * Agent 身份由顶栏切换器承担；状态见底栏与切换菜单。
  */
 import { useEffect, useRef, useState } from 'react'
-import { Copy, Download, Eraser, FileText, Pin, PinOff, Play, RotateCcw, SendHorizontal, Square } from 'lucide-react'
+import { Copy, Download, Eraser, RotateCcw, SendHorizontal, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AgentLogo } from '@/components/ui/agent-logo'
-import { StatusBadge } from '@/components/ui/status-badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Workbench } from '@/hooks/use-workbench'
 import type { OutputEntry } from '@/services/agent-control-types'
 import { cn } from 'cn'
@@ -64,85 +59,40 @@ export default function Workbench({ wb }: { wb: Workbench }) {
     )
   }
 
-  const running = agent.status === 'RUNNING' || agent.status === 'STARTING'
-  const stopping = agent.status === 'STOPPING' || wb.busy === 'stop' || wb.busy === 'restart'
-  const starting = wb.busy === 'start'
-  const lifecycleBusy = wb.busy !== null
-
   return (
     <section id="workbench" className="flex min-w-0 flex-1 flex-col bg-background">
-      {/* ===== 头部：当前 Agent 展示（13.15：切换只走顶栏 logo，此处回归纯展示）===== */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-border/70 px-4 py-2.5">
-        <div id="workbench-agent" className="flex min-w-0 items-center gap-2.5" title={agent.name}>
-          <AgentLogo agentId={agent.id} short={agent.short} size="lg" />
-          <span className="truncate text-[17px] font-semibold leading-tight">{agent.name}</span>
-        </div>
-        <StatusBadge id="status-badge" status={agent.status} />
-        <div className="ml-auto flex shrink-0 items-center gap-1.5" id="lifecycle-bar">
-          {running || stopping ? (
-            <Button
-              id="agent-ctrl-stop"
-              variant="secondary"
-              size="sm"
-              disabled={wb.busy !== null || agent.status === 'STOPPING'}
-              title={wb.busy ? `正在执行 ${wb.busy}…` : '停止当前 Agent'}
-              onClick={() => void wb.stop()}
-            >
-              <Square className="size-4" strokeWidth={1.5} aria-hidden />
-              {stopping ? '停止中…' : '停止'}
-            </Button>
-          ) : (
-            <Button
-              id="agent-ctrl-start"
-              variant="default"
-              size="sm"
-              disabled={starting}
-              title={starting ? '正在启动…' : '启动当前 Agent'}
-              onClick={() => void wb.start()}
-            >
-              <Play className="size-4" strokeWidth={1.5} aria-hidden />
-              {starting ? '启动中…' : '启动'}
-            </Button>
-          )}
-          <Button
-            id="agent-ctrl-restart"
-            variant="outline"
-            size="sm"
-            disabled={lifecycleBusy || agent.status !== 'RUNNING'}
-            title={agent.status !== 'RUNNING' ? '仅运行中的 Agent 可重启' : '重启当前 Agent'}
-            onClick={() => void wb.restart()}
-          >
-            <RotateCcw className="size-4" strokeWidth={1.5} aria-hidden />
-            重启
-          </Button>
-          <Button
-            id="agent-ctrl-logs"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="打开日志"
-            title="复制日志路径（stub）"
-            onClick={() => void wb.openLogs()}
-          >
-            <FileText className="size-4" strokeWidth={1.5} />
-          </Button>
-          <Button
-            id="agent-ctrl-pin"
-            variant="ghost"
-            size="icon-sm"
-            aria-pressed={agent.pinned}
-            aria-label={agent.pinned ? '取消置顶' : '置顶'}
-            title={agent.pinned ? '取消置顶' : '置顶该 Agent'}
-            onClick={() => void wb.togglePin()}
-          >
-            {agent.pinned ? <PinOff className="size-4" strokeWidth={1.5} /> : <Pin className="size-4" strokeWidth={1.5} />}
-          </Button>
-        </div>
-      </header>
-
-      {/* ===== 输出工具条 ===== */}
+      {/* ===== 输出工具条：会话名 + 模型 chip（13.16）+ 会话操作 ===== */}
       <div id="output-toolbar" className="flex shrink-0 items-center gap-2 border-b border-border/70 px-4 py-1.5">
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground">{wb.sessionTitle}</span>
+        <span className="min-w-0 shrink text-[11px] text-muted-foreground">{wb.sessionTitle}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              id="model-selector"
+              className="flex shrink-0 items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors duration-150 ease-out hover:bg-accent"
+              title="切换模型（stub 演示清单）"
+              aria-label={`当前模型：${wb.model}，点击切换`}
+            >
+              <span className="max-w-[160px] truncate">{wb.model}</span>
+              <ChevronDown className="size-3 shrink-0 opacity-60" strokeWidth={1.5} aria-hidden />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            {wb.models.map((m) => (
+              <DropdownMenuItem
+                key={m}
+                id={`model-selector-item-${m}`}
+                className={cn('text-[12px]', m === wb.model && 'bg-accent/70 font-medium')}
+                onClick={() => void wb.switchModel(m)}
+              >
+                {m}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Button id="agent-ctrl-regenerate" variant="ghost" size="icon-xs" aria-label="重新生成" title="重新生成上一条回复" onClick={() => void wb.regenerate()}>
+            <RotateCcw className="size-3.5" strokeWidth={1.5} />
+          </Button>
           <Button id="agent-ctrl-clear" variant="ghost" size="icon-xs" aria-label="清空输出" title="清空输出（5s 内可撤销）" onClick={() => void wb.clear()}>
             <Eraser className="size-3.5" strokeWidth={1.5} />
           </Button>

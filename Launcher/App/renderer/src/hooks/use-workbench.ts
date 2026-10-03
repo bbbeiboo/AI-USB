@@ -23,6 +23,8 @@ export function useWorkbench() {
   const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [output, setOutput] = useState<OutputEntry[]>([])
+  const [model, setModelState] = useState<string>('')
+  const [models, setModels] = useState<string[]>([])
   const [busy, setBusy] = useState<BusyAction>(null)
 
   // 订阅回调里用 ref 判断「推送是否属于当前视图」，避免闭包过期
@@ -38,6 +40,8 @@ export function useWorkbench() {
       const target = preferId && ss.some((s) => s.id === preferId) ? preferId : ss[0]?.id ?? null
       setSessionId(target)
       setOutput(await svc.getOutput(agentId))
+      setModelState(await svc.getModel(agentId))
+      setModels(await svc.listModels(agentId))
       return target
     },
     [svc],
@@ -67,6 +71,9 @@ export function useWorkbench() {
       const first = list[0].id
       setCurrentId(first)
       await loadSessions(first)
+      // 13.16 用户裁决：打开软件即开启所有 Agent（stub 走同一 startAgent 调用路径，
+      // 真接线轮无需改动本段——服务层切 real 后即真实启动，进程归 pm 管）。
+      for (const a of list) void svc.startAgent(a.id).catch(() => {})
     })
     return () => {
       alive = false
@@ -108,6 +115,45 @@ export function useWorkbench() {
     [svc, currentId],
   )
 
+  // ---- 会话管理（13.16 对标市面：重命名/置顶/删除） --------------------------
+  const renameSession = useCallback(
+    async (id: string, title: string) => {
+      if (!currentId || !sessionId) return
+      const meta = await svc.renameSession(currentId, id, title)
+      setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title: meta.title } : s)))
+      toast(`已重命名为「${meta.title}」`)
+    },
+    [svc, currentId, sessionId],
+  )
+
+  const deleteSession = useCallback(
+    async (id: string) => {
+      if (!currentId) return
+      await svc.deleteSession(currentId, id)
+      const rest = await svc.listSessions(currentId)
+      setSessions(rest)
+      if (sessionIdRef.current === id) {
+        const target = rest[0]?.id ?? null
+        setSessionId(target)
+        setOutput(target ? await svc.getOutput(currentId) : [])
+      }
+      toast('已删除会话')
+    },
+    [svc, currentId],
+  )
+
+  const toggleSessionPin = useCallback(
+    async (id: string) => {
+      if (!currentId) return
+      const target = sessions.find((s) => s.id === id)
+      if (!target) return
+      await svc.pinSession(currentId, id, !target.pinned)
+      setSessions(await svc.listSessions(currentId))
+      toast(target.pinned ? '已取消置顶' : '已置顶')
+    },
+    [svc, currentId, sessions],
+  )
+
   // ---- 生命周期（busy 守卫防连点；徽标由 onStatusChange 驱动） ---------------
   const start = useCallback(async () => {
     if (!currentId || busy) return
@@ -145,6 +191,17 @@ export function useWorkbench() {
     await svc.pinAgent(current.id, next)
     setAgents(await svc.listAgents())
   }, [svc, current])
+
+  // ---- 模型切换（13.16）------------------------------------------------------
+  const switchModel = useCallback(
+    async (m: string) => {
+      if (!currentId || m === model) return
+      await svc.setModel(currentId, m)
+      setModelState(m)
+      toast(`已切换到 ${m}（stub）`)
+    },
+    [svc, currentId, model],
+  )
 
   // ---- 输出工具 -------------------------------------------------------------
   const clear = useCallback(async () => {
@@ -204,14 +261,34 @@ export function useWorkbench() {
     async (text: string) => {
       const trimmed = text.trim()
       if (!currentId || !trimmed) return
+      // 主流客户端行为：无会话时发消息自动建会话
+      let sid = sessionIdRef.current
+      if (!sid) {
+        const meta = await svc.newSession(currentId)
+        setSessions((prev) => [meta, ...prev.filter((s) => s.id !== meta.id)])
+        setSessionId(meta.id)
+        sid = meta.id
+      }
       await svc.sendInput(currentId, trimmed)
     },
     [svc, currentId],
   )
 
+  /** 重新生成（13.16 对标市面）：重发当前会话最后一条用户消息，stub 流式出新回复 */
+  const regenerate = useCallback(async () => {
+    if (!currentId) return
+    const lastUser = [...output].reverse().find((e) => e.kind === 'user')
+    if (!lastUser) {
+      toast('没有可重新生成的内容')
+      return
+    }
+    await svc.sendInput(currentId, lastUser.text)
+  }, [svc, currentId, output])
+
   return {
-    agents, current, sessions, sessionId, sessionTitle, output, busy,
-    switchAgent, newSession, switchSession,
+    agents, current, sessions, sessionId, sessionTitle, output, busy, model, models,
+    switchAgent, newSession, switchSession, renameSession, deleteSession, toggleSessionPin,
+    switchModel, regenerate,
     start, stop, restart, togglePin,
     clear, copy, exportSession, openLogs, send,
   }

@@ -28,6 +28,8 @@ export interface SessionMeta {
   title: string
   createdAt: number
   updatedAt: number
+  /** 会话级置顶（13.16 对标 Cherry Studio/LobeChat：置顶会话排在列表最前） */
+  pinned: boolean
 }
 
 export type OutputKind = 'user' | 'agent' | 'system'
@@ -77,6 +79,15 @@ export interface AgentControlService {
   newSession(id: string): Promise<SessionMeta>
   listSessions(id: string): Promise<SessionMeta[]>
   switchSession(id: string, sessionId: string): Promise<SessionMeta>
+  /**
+   * 会话重命名（13.16 对标 Cherry Studio/LobeChat 会话右键菜单）。
+   * 相对任务书接口的补充 #2：行内重命名需要服务层落地标题。
+   */
+  renameSession(id: string, sessionId: string, title: string): Promise<SessionMeta>
+  /** 删除会话（13.16）。删除当前会话后 UI 自行切到剩余第一条。 */
+  deleteSession(id: string, sessionId: string): Promise<void>
+  /** 会话级置顶（13.16）；listSessions 置顶优先返回。 */
+  pinSession(id: string, sessionId: string, pinned: boolean): Promise<void>
   /** 当前会话的输出（stub 内置演示输出流） */
   getOutput(id: string): Promise<OutputEntry[]>
   clearOutput(id: string): Promise<void>
@@ -97,6 +108,14 @@ export interface AgentControlService {
   openLogs(id: string): Promise<void>
   /** 置顶偏好（stub 为内存态） */
   pinAgent(id: string, pinned: boolean): Promise<void>
+
+  // —— 模型切换（13.16 对标 Chatbox/Cherry Studio 快速切换模型）———————
+  /** 当前 Agent 可选模型清单（stub 为演示清单；接线轮来自 provider 缓存） */
+  listModels(id: string): Promise<string[]>
+  getModel(id: string): Promise<string>
+  /** 切换模型并持久化到服务层状态（stub 内存态） */
+  setModel(id: string, model: string): Promise<void>
+
   onStatusChange(cb: StatusChangeHandler): () => void
   onOutput(cb: OutputHandler): () => void
 }

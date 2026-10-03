@@ -47,6 +47,14 @@ const AGENT_SEEDS: AgentSeed[] = [
 
 const SEED_SESSION_TITLES = ['初始化体检', '日志走查', '示例任务']
 
+/** 每 Agent 演示模型清单（13.16 模型切换器；stub 内存值，接线轮来自 provider 缓存） */
+const STUB_MODELS: Record<string, string[]> = {
+  openclaw: ['qwen 3.8 27B', 'glm-5.3', 'deepseek-v4'],
+  hermes: ['hermes-4-405b', 'llama-4-maverick', 'qwen 3.8 27B'],
+  codex: ['gpt-5.2-codex', 'o4-mini', 'claude-sonnet-4'],
+  'claude-code': ['claude-sonnet-4.5', 'claude-opus-4.1', 'claude-haiku-4'],
+}
+
 export function createStubAgentControlService(opts: StubOptions = {}): AgentControlService & { __calls: CallRecord[] } {
   const startDelay = opts.startDelayMs ?? 800
   const stopDelay = opts.stopDelayMs ?? 500
@@ -58,6 +66,7 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
   const pinned = new Set<string>()
   const sessions = new Map<string, SessionMeta[]>()
   const currentSession = new Map<string, string>()
+  const currentModel = new Map<string, string>()
   const outputs = new Map<string, OutputEntry[]>()
   const clearedBackup = new Map<string, OutputEntry[]>()
   const statusCbs = new Set<StatusChangeHandler>()
@@ -97,9 +106,10 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
 
   // ---- 种子数据：每 Agent 3 条历史会话 + 演示输出 ---------------------------
   for (const a of AGENT_SEEDS) {
+    currentModel.set(a.id, STUB_MODELS[a.id]?.[0] ?? 'stub-model')
     const list: SessionMeta[] = SEED_SESSION_TITLES.map((title, i) => {
       const createdAt = Date.now() - (i + 1) * 3600_000
-      return { id: `seed-${a.id}-${i + 1}`, agentId: a.id, title, createdAt, updatedAt: createdAt }
+      return { id: `seed-${a.id}-${i + 1}`, agentId: a.id, title, createdAt, updatedAt: createdAt, pinned: false }
     })
     sessions.set(a.id, list)
     currentSession.set(a.id, list[0].id)
@@ -151,16 +161,55 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     record('newSession', id)
     assertAgent(id)
     const now = Date.now()
-    const meta: SessionMeta = { id: nextId(`s-${id}`), agentId: id, title: `新会话 ${new Date(now).toLocaleTimeString('zh-CN', { hour12: false })}`, createdAt: now, updatedAt: now }
+    const meta: SessionMeta = { id: nextId(`s-${id}`), agentId: id, title: `新会话 ${new Date(now).toLocaleTimeString('zh-CN', { hour12: false })}`, createdAt: now, updatedAt: now, pinned: false }
     sessions.get(id)?.unshift(meta)
     currentSession.set(id, meta.id)
     outputs.set(meta.id, [])
     return meta
   }
+  /** 会话列表：置顶优先（稳定排序），组内按原时间顺序 */
+  function sortedSessions(id: string): SessionMeta[] {
+    const list = [...(sessions.get(id) ?? [])]
+    return list.filter((s) => s.pinned).concat(list.filter((s) => !s.pinned))
+  }
   async function listSessions(id: string): Promise<SessionMeta[]> {
     record('listSessions', id)
     assertAgent(id)
-    return [...(sessions.get(id) ?? [])]
+    return sortedSessions(id)
+  }
+  async function renameSession(id: string, sessionId: string, title: string): Promise<SessionMeta> {
+    record('renameSession', id, sessionId, title)
+    assertAgent(id)
+    const meta = sessions.get(id)?.find((s) => s.id === sessionId)
+    if (!meta) throw new Error(`stub: session ${sessionId} not found`)
+    const clean = title.trim()
+    if (clean) {
+      meta.title = clean
+      meta.updatedAt = Date.now()
+    }
+    return { ...meta }
+  }
+  async function deleteSession(id: string, sessionId: string): Promise<void> {
+    record('deleteSession', id, sessionId)
+    assertAgent(id)
+    const list = sessions.get(id)
+    if (!list) throw new Error(`stub: session ${sessionId} not found`)
+    const i = list.findIndex((s) => s.id === sessionId)
+    if (i < 0) throw new Error(`stub: session ${sessionId} not found`)
+    list.splice(i, 1)
+    outputs.delete(sessionId)
+    if (currentSession.get(id) === sessionId) {
+      const next = sortedSessions(id)[0]?.id
+      if (next) currentSession.set(id, next)
+      else currentSession.delete(id)
+    }
+  }
+  async function pinSession(id: string, sessionId: string, pin: boolean): Promise<void> {
+    record('pinSession', id, sessionId, pin)
+    assertAgent(id)
+    const meta = sessions.get(id)?.find((s) => s.id === sessionId)
+    if (!meta) throw new Error(`stub: session ${sessionId} not found`)
+    meta.pinned = pin
   }
   async function switchSession(id: string, sessionId: string): Promise<SessionMeta> {
     record('switchSession', id, sessionId)
@@ -265,6 +314,24 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     if (pin) pinned.add(id)
     else pinned.delete(id)
   }
+
+  // ---- 模型切换（13.16）------------------------------------------------------
+  async function listModels(id: string): Promise<string[]> {
+    record('listModels', id)
+    assertAgent(id)
+    return [...(STUB_MODELS[id] ?? [])]
+  }
+  async function getModel(id: string): Promise<string> {
+    record('getModel', id)
+    assertAgent(id)
+    return currentModel.get(id) ?? STUB_MODELS[id]?.[0] ?? 'stub-model'
+  }
+  async function setModel(id: string, model: string): Promise<void> {
+    record('setModel', id, model)
+    assertAgent(id)
+    if (!STUB_MODELS[id]?.includes(model)) throw new Error(`stub: unknown model ${model} for ${id}`)
+    currentModel.set(id, model)
+  }
   function onStatusChange(cb: StatusChangeHandler): () => void {
     statusCbs.add(cb)
     return () => statusCbs.delete(cb)
@@ -293,9 +360,10 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
 
   return {
     listAgents, getAgentStatus, startAgent, stopAgent, restartAgent,
-    newSession, listSessions, switchSession,
+    newSession, listSessions, switchSession, renameSession, deleteSession, pinSession,
     getOutput, clearOutput, undoClearOutput, copyOutput, exportSession, sendInput,
-    openLogs, pinAgent, onStatusChange, onOutput,
+    openLogs, pinAgent, listModels, getModel, setModel,
+    onStatusChange, onOutput,
     __calls: calls,
   }
 }

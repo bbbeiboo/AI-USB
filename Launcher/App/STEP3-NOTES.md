@@ -1164,3 +1164,73 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
    打包也会 ffmpeg.dll EPERM。流程改为：先关实例（无持久状态，stub 轮安全）→ 基线 → 打包 → 实测 → 关 → 终检。
 4. **visual-judge 子代理不可用**（provider 未配置）：按协议降级为本体查验截图（四张全过：
    官方 logo 均渲染、无字母回退、无遮挡错位）。
+
+## 13.16 追加裁决：开机自启全部 Agent + 删工作台启停栏 + 对标市面补全功能按钮
+
+### 13.16.1 需求与实现
+
+用户原话：「删除中间的agent启动状态栏，做成打开软件即开启所有agent，然后再对比市面上其他agent设置里
+的内容去做功能按钮，内容要全」。
+
+三段裁决：
+1. **工作台头部启停栏整体删除**（logo/名称/状态徽标/启动/停止/重启/日志/置顶）——Agent 身份由顶栏
+   切换器承担。两个功能性出口迁移：日志路径复制移到状态栏右侧（`app-open-logs`，应用级工具）；
+   Agent 级置顶按钮随栏删除（由新增的**会话级置顶**取代，置顶逻辑服务层保留不删）。
+2. **打开软件即开启全部 Agent**：hook 挂载后在 listAgents 之后对全部 Agent 逐个调用 `startAgent`
+   （stub 状态机 800ms 后转 RUNNING，绿点全程可见）。**关键架构决策：自启走与手动启动完全相同的
+   服务调用路径**——真接线轮服务层切 real 后，这段代码零改动即真实启动（进程归 pm 管）。
+   stub 状态不冒充真实：状态栏「stub 演示模式」标识保留。
+3. **对标市面补全功能按钮**（Cherry Studio / LobeChat / Chatbox 三款桌面客户端的会话管理标配 +
+   ChatGPT/Claude Desktop 的应用级按钮，来源见下表）：
+
+| 功能 | 对标来源 | 本轮落地 |
+| --- | --- | --- |
+| 会话搜索 | 三家标配（ChatGPT/Claude 同） | 侧栏搜索框 `session-search`，实时过滤，Ctrl+K 聚焦 |
+| 会话重命名 | Cherry Studio 右键 / LobeChat | ⋯ 菜单 → 行内编辑（Enter/失焦提交，Esc 取消） |
+| 会话置顶 | LobeChat 官方 RFC：置顶排顶部 | ⋯ 菜单 → pinSession，列表稳定排序置顶优先 |
+| 会话删除 | 三家标配 | ⋯ 菜单 → **二次确认武装态**（首点变「再点一次确认删除」且菜单保持开） |
+| 重新生成 | 三家标配 | 工具条 `agent-ctrl-regenerate`：重发最后一条用户消息，stub 流式出新回复 |
+| 模型快速切换 | Chatbox/Cherry Studio 模型管理 | 工具条 chip `model-selector`，每 Agent 演示清单 3 项，切换即 toast |
+| 检查更新 | ChatGPT/Claude Desktop | 顶栏 `app-check-updates`：图标旋转 800ms → toast「v1.0.0 已是最新（stub）」，不伪造更新内容 |
+| 帮助/快捷键 | 主流客户端通用 | 顶栏 `app-help` Popover：Enter/Shift+Enter/Ctrl+N/Ctrl+K |
+| 无会话时发送自动建会话 | ChatGPT 行为 | hook send 无 sessionId 时先 newSession |
+
+**13.13 砍按钮裁决被本轮显式取代**：模型切换器/检查更新/帮助按用户「内容要全」要求回归（stub 形态，
+反馈全部可见且带 stub 标识）。**刻意仍不做**：语音输入、附件上传（stub 无法给出有意义反馈，伪装即撒谎）；
+主题切换（.dark 暗色 token 未按 Apple 规范补齐，草率上马会破坏已验收的浅色观感，列为候选）。
+
+服务层新增（相对任务书接口的补充 #2~#7，全部进 real 骨架 throw not-wired-yet + 单测覆盖）：
+`renameSession` / `deleteSession` / `pinSession`（会话三操作）、`listModels` / `getModel` / `setModel`
+（模型切换）；`SessionMeta` 增 `pinned` 字段。真实通道映射：会话三操作 → agent:sessions 写操作；
+模型三方法 → 既有 cfg 通道（接线轮）。
+
+### 13.16.2 验收
+
+- 四闸门：tsc 零错误、vite 构建成功（index-CQYFP8Fj.js）、**单测 52/52**（+2：会话管理、模型切换）、打包 EXIT=0。
+- asar：**旧启停 Aid 六项零命中**（agent-ctrl-start/stop/restart/logs/pin、status-badge）——删除达成；
+  新 Aid 全在（agent-ctrl-regenerate=1、model-selector=2、session-search=1、session-menu=4、
+  app-check-updates=1、app-help=1、app-open-logs=1）；not-wired-yet=1。
+- **真实 exe 实测**（实例 29568，启动后 ~2.5s 走查）：
+  状态栏「OpenClaw · 运行中」（自启生效）；切换菜单四项全「运行中」（截图 13.16-real-exe-autostart-menu.png）；
+  模型 chip 点击 → 三项菜单 → 选 llama-4-maverick → chip 与 aria 同步（13.16-real-exe-model-switched.png）；
+  重新生成点击后同回复追加一组（UIA 文本计数）；
+  会话 ⋯ 菜单置顶「示例任务」→ 跳顶带图钉（13.16-real-exe-session-pinned.png）；
+  行内重命名（UIA SetValue + 失焦提交）→「日志体检（已改名）」；
+  删除「日志走查」：首点武装成「再点一次确认删除」且菜单保持开（13.16-real-exe-delete-armed.png），
+  再点确认 → 条目消失，当前会话自动落到剩余第一条（置顶的示例任务）；
+  帮助 Popover 四快捷键（13.16-real-exe-help.png）；
+  检查更新 → toast「v1.0.0 已是最新（stub 演示，未联网检查）」（13.16-real-exe-check-updates-toast.png，
+  同框可见：无启停栏的工具条、置顶会话、模型 chip、状态栏日志钮）。
+- **零净写入：15/15 哈希与基线一致**（diff 仅 launcher.log +759 字节 = 一次启动关闭 + 用户实测日志）。
+- **用户实测插曲（如实记录）**：走查期间用户在真 exe 里手动发送了「1」，stub 正常回显+响应——发送链路
+  被真实用户操作二次验证。另：走查脚本一次「点击搜索框」的坐标落在了当时展开的切换菜单 Hermes 项上，
+  意外完成了一次 Agent 切换——反向验证了跨 Agent 模型态隔离（chip 正确切到 hermes-4-405b）。
+
+### 13.16.3 新坑记录
+
+1. **UIA 坐标点击撞上瞬时弹层**：uiaclick 的坐标兜底点击前必须先确认目标弹层已收起——本轮点击
+   「搜索框」时切换菜单仍开着，(526,386) 恰落在 Hermes 菜单项上。后续走查脚本应先 Escape/收起再点坐标。
+2. **UIA SetValue 对 React 受控输入有效**（Chromium 把 ValuePattern 转成 input 事件），行内重命名
+   的提交（Enter/失焦）在 UIA 驱动下正常触发——可复用的测试手法。
+3. **radix DropdownMenuItem 的 onSelect preventDefault** 可保持菜单打开——「二次确认删除」武装态
+   依此实现，无需自建弹层。

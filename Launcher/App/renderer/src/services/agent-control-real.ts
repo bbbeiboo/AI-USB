@@ -13,8 +13,10 @@
  * | restartAgent          | agent:restart                          | 已有（restartAgent） |
  * | onStatusChange        | agent:status 推送                      | 已有（onAgentStatus；⚠不可退订，需模块级一次守卫，见 agent-client.ts） |
  * | newSession/listSessions/switchSession | 需新增 agent:sessions  | 无 |
+ * | renameSession/deleteSession/pinSession | 需新增 agent:sessions（写操作同通道） | 无 |
  * | getOutput/clearOutput/undoClearOutput | 需新增 agent:output    | 无 |
  * | sendInput             | 需新增 agent:input                     | 无 |
+ * | listModels/getModel/setModel | 接 cfg:model-list / cfg:save（既有配置通道） | 部分（settings 已用） |
  * | exportSession         | 需新增 agent:export                    | 无 |
  * | copyOutput            | 渲染层自足（getOutput + clipboard 写入）| 无需通道 |
  * | openLogs              | shell:openLogs（现有=全局日志）→ 下一轮扩展 per-agent | 部分 |
@@ -38,6 +40,9 @@ export const realAgentControlService: AgentControlService = {
   async newSession() { notWired('newSession') },
   async listSessions() { notWired('listSessions') },
   async switchSession() { notWired('switchSession') },
+  async renameSession() { notWired('renameSession') },
+  async deleteSession() { notWired('deleteSession') },
+  async pinSession() { notWired('pinSession') },
   async getOutput() { notWired('getOutput') },
   async clearOutput() { notWired('clearOutput') },
   async undoClearOutput() { notWired('undoClearOutput') },
@@ -46,6 +51,9 @@ export const realAgentControlService: AgentControlService = {
   async sendInput() { notWired('sendInput') },
   async openLogs() { notWired('openLogs') },
   async pinAgent() { notWired('pinAgent') },
+  async listModels() { notWired('listModels') },
+  async getModel() { notWired('getModel') },
+  async setModel() { notWired('setModel') },
   onStatusChange() { notWired('onStatusChange') },
   onOutput() { notWired('onOutput') },
 }

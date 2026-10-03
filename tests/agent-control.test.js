@@ -16,8 +16,10 @@ test('工厂默认返回 stub：接口方法齐全且为函数', async () => {
   __resetAgentControlServiceForTest();
   const svc = getAgentControlService();
   for (const m of ['listAgents', 'getAgentStatus', 'startAgent', 'stopAgent', 'restartAgent',
-    'newSession', 'listSessions', 'switchSession', 'getOutput', 'clearOutput', 'undoClearOutput',
-    'copyOutput', 'exportSession', 'sendInput', 'openLogs', 'pinAgent', 'onStatusChange', 'onOutput']) {
+    'newSession', 'listSessions', 'switchSession', 'renameSession', 'deleteSession', 'pinSession',
+    'getOutput', 'clearOutput', 'undoClearOutput',
+    'copyOutput', 'exportSession', 'sendInput', 'openLogs', 'pinAgent',
+    'listModels', 'getModel', 'setModel', 'onStatusChange', 'onOutput']) {
     assert.equal(typeof svc[m], 'function', `method ${m}`);
   }
 });
@@ -143,6 +145,54 @@ test('pinAgent：置顶条目排前，可取消', async () => {
   assert.ok(agents.every((a) => !a.pinned));
 });
 
+test('13.16 会话管理：renameSession / pinSession / deleteSession（置顶优先排序）', async () => {
+  const svc = makeFast();
+  const before = await svc.listSessions('hermes');
+  assert.ok(before.every((s) => s.pinned === false), '种子会话默认不置顶');
+
+  // 重命名：trim 后生效，updatedAt 前移
+  const renamed = await svc.renameSession('hermes', before[1].id, '  新标题  ');
+  assert.equal(renamed.title, '新标题');
+  const afterRename = await svc.listSessions('hermes');
+  assert.equal(afterRename.find((s) => s.id === before[1].id).title, '新标题');
+
+  // 置顶：pinned 优先排前（稳定），可取消
+  await svc.pinSession('hermes', before[2].id, true);
+  let list = await svc.listSessions('hermes');
+  assert.equal(list[0].id, before[2].id, '置顶会话应排最前');
+  assert.equal(list[0].pinned, true);
+  await svc.pinSession('hermes', before[2].id, false);
+  list = await svc.listSessions('hermes');
+  assert.ok(list.every((s) => !s.pinned));
+
+  // 删除：列表移除；删除的是新会话（当前）→ current 落到剩余第一条
+  const meta = await svc.newSession('hermes');
+  assert.deepEqual(await svc.getOutput('hermes'), []);
+  await svc.deleteSession('hermes', meta.id);
+  const rest = await svc.listSessions('hermes');
+  assert.equal(rest.length, 3);
+  assert.ok(!rest.some((s) => s.id === meta.id), '被删会话不应再出现');
+
+  // 防呆：未知会话抛错
+  await assert.rejects(() => svc.renameSession('hermes', 'nope', 'x'));
+  await assert.rejects(() => svc.deleteSession('hermes', 'nope'));
+  await assert.rejects(() => svc.pinSession('hermes', 'nope', true));
+});
+
+test('13.16 模型切换：listModels 非空、getModel 默认第一项、setModel 校验成员', async () => {
+  const svc = makeFast();
+  for (const id of ['openclaw', 'hermes', 'codex', 'claude-code']) {
+    const models = await svc.listModels(id);
+    assert.ok(models.length >= 3, `${id} 应有演示模型清单`);
+    const def = await svc.getModel(id);
+    assert.equal(def, models[0], '默认模型应为清单第一项');
+    await svc.setModel(id, models[1]);
+    assert.equal(await svc.getModel(id), models[1], '切换后应生效');
+    await assert.rejects(() => svc.setModel(id, 'not-in-list'), /unknown model/);
+  }
+  await assert.rejects(() => svc.listModels('nonexistent'));
+});
+
 test('__calls 记录全部调用方法名', async () => {
   const svc = makeFast();
   await svc.listAgents();
@@ -161,5 +211,9 @@ test('realAgentControlService：每方法都 throw not-wired-yet（骨架契约�
   await assert.rejects(() => realAgentControlService.listAgents(), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.startAgent('hermes'), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.exportSession('hermes', 's', 'md'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.renameSession('hermes', 's', 't'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.deleteSession('hermes', 's'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.pinSession('hermes', 's', true), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.setModel('hermes', 'm'), /not-wired-yet/);
   assert.throws(() => realAgentControlService.onStatusChange(() => {}), /not-wired-yet/);
 });

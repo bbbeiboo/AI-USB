@@ -1,18 +1,18 @@
 /**
- * v2 布局（13.15 更新）：
- *   ┌────────────────── TopBar（毛玻璃）──────────────────┐
- *   │ [logo=当前Agent，左键切换]     当前会话名             │
- *   ├──── SideBar ────┬──────── Workbench ────────────────┤
- *   │ 新建会话         │ logo+名称+徽标+启停/重启/日志/置顶   │
- *   │ 会话列表         │ 输出工具条（清空/复制/导出）          │
- *   │ [用户卡+设置]     │ 输出流（stub 驱动，含流式响应）       │
- *   │                 │ 输入框 + 发送                        │
- *   ├── StatusBar ────┴───────────────────────────────────┤
- * 13.15 裁决：Agent 列表从侧栏删除，切换只走顶栏 logo 唯一按钮；
- * 设置齿轮移到侧栏左下用户卡。数据全部来自 getAgentControlService()（stub/real 唯一切换点）。
- * 设置弹窗沿用既有三组件（13.13 硬规则 6：功能逻辑不动）。
+ * v2 布局（13.16 更新）：
+ *   ┌──────────────────── TopBar（毛玻璃）────────────────────┐
+ *   │ [logo=当前Agent，左键切换]   当前会话名   [检查更新][帮助] │
+ *   ├──── SideBar ──────┬────────── Workbench ────────────────┤
+ *   │ 新建会话           │ 工具条：会话名+模型chip+重生成/清空/    │
+ *   │ 会话搜索(Ctrl+K)   │   复制/导出（启停栏已删：开机自启全部）  │
+ *   │ 会话列表(⋯菜单)    │ 输出流（stub 驱动，含流式响应）         │
+ *   │ [用户卡+设置]       │ 输入框 + 发送                         │
+ *   ├── StatusBar（状态+日志入口+stub 标识）┴────────────────────┤
+ * 13.16 裁决：打开软件即开启全部 Agent（hook 层统一走 startAgent，真接线轮零改动）；
+ * 工作台头部启停栏删除，日志入口移到状态栏。数据全部来自 getAgentControlService()
+ * （stub/real 唯一切换点）。设置弹窗沿用既有三组件（13.13 硬规则 6：功能逻辑不动）。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import TopBar from '@/components/layout/TopBar'
 import SideBar from '@/components/layout/SideBar'
 import Workbench from '@/components/workbench/Workbench'
@@ -29,6 +29,18 @@ export default function App() {
    */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
 
+  // Ctrl+N 新建会话（快捷键面板见顶栏帮助 Popover；Ctrl+K 由 SideBar 自管聚焦）
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent) {
+      if (ev.ctrlKey && ev.key.toLowerCase() === 'n') {
+        ev.preventDefault()
+        void wb.newSession()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [wb])
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TopBar
@@ -43,11 +55,14 @@ export default function App() {
           sessionId={wb.sessionId}
           onNewSession={() => void wb.newSession()}
           onSwitchSession={(id) => void wb.switchSession(id)}
+          onRenameSession={(id, title) => void wb.renameSession(id, title)}
+          onDeleteSession={(id) => void wb.deleteSession(id)}
+          onPinSession={(id) => void wb.toggleSessionPin(id)}
           onOpenSettings={() => setSettingsOpen(true)}
         />
         <Workbench wb={wb} />
       </div>
-      <StatusBar agent={wb.current} />
+      <StatusBar agent={wb.current} onOpenLogs={() => void wb.openLogs()} />
       <ToastHost />
       <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>

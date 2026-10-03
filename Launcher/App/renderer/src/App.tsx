@@ -1,122 +1,131 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useRef, useState } from 'react'
+import {
+  AGENTS,
+  MODELS,
+  CONVERSATIONS,
+  INITIAL_MESSAGES,
+  nextId,
+  type ChatMessage,
+  type Conversation,
+} from '@/data/mock-data'
+import ConversationList from '@/components/sidebar/ConversationList'
+import NewChatButton from '@/components/sidebar/NewChatButton'
+import AgentSelector from '@/components/topbar/AgentSelector'
+import ModelSelector from '@/components/topbar/ModelSelector'
+import SettingsButton from '@/components/topbar/SettingsButton'
+import MessageList from '@/components/chat/MessageList'
+import ChatInput from '@/components/chat/ChatInput'
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+/** 假 AI 回复文本：用于演示"逐字追加"的流式效果（不连接任何 IPC） */
+function fakeReply(input: string): string {
+  return `收到：「${input}」。这是前端假回复（未连接 IPC），用来验证消息区渲染、自动滚动与逐字追加效果。`
 }
 
-export default App
+/**
+ * 三栏布局骨架（假数据）：
+ *   ┌──────────┬────────────────────────────┐
+ *   │ 新建会话  │ Agent ▼  模型 ▼         ⚙  │
+ *   │ 会话列表  ├────────────────────────────┤
+ *   │          │ 消息区（自动滚动）           │
+ *   │ [设置]    ├────────────────────────────┤
+ *   │          │ 输入框                [发送] │
+ *   └──────────┴────────────────────────────┘
+ */
+export default function App() {
+  // 全部为前端状态；接入 IPC 时只需替换这些状态的来源
+  const [agentId, setAgentId] = useState(AGENTS[0].id)
+  const [model, setModel] = useState(MODELS[0])
+  const [conversations, setConversations] = useState<Conversation[]>(CONVERSATIONS)
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(CONVERSATIONS[0]?.id ?? null)
+  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES)
+
+  // 持有流式定时器句柄：组件卸载时必须清理，否则会在已卸载组件上 setState
+  const timerRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearInterval(timerRef.current)
+    }
+  }, [])
+
+  function stopStream() {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  /** 发送：先追加一条用户消息，再逐字追加一条假 AI 回复 */
+  function handleSend(text: string) {
+    stopStream() // 上一次回复还没流完就直接接管，避免两条回复交错追加
+    const assistantId = nextId('a')
+    const full = fakeReply(text)
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId('u'), role: 'user', content: text },
+      { id: assistantId, role: 'assistant', content: '' },
+    ])
+
+    let shown = 0
+    timerRef.current = window.setInterval(() => {
+      shown += 2 // 每帧 2 个字，接近真实流式观感
+      const slice = full.slice(0, shown)
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: slice } : m)))
+      if (shown >= full.length) stopStream()
+    }, 40)
+  }
+
+  /** 新建会话：插入一条"今天"分组的假会话并选中 */
+  function handleNewChat() {
+    const id = nextId('c')
+    setConversations((prev) => [{ id, title: `新会话 ${id}`, group: '今天' }, ...prev])
+    setSelectedConvId(id)
+    setMessages([])
+  }
+
+  /** 点击会话：仅切换高亮（假数据阶段不做按会话存储） */
+  function handleSelectConversation(id: string) {
+    setSelectedConvId(id)
+    setMessages(INITIAL_MESSAGES)
+  }
+
+  return (
+    // 外层 flex 定宽 + h-screen + overflow-hidden：窗口缩放时布局不塌
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      {/* ===== 左侧栏：固定 260px ===== */}
+      <aside className="flex h-screen w-[260px] shrink-0 flex-col border-r border-border bg-muted/30">
+        <div className="p-3">
+          <NewChatButton onClick={handleNewChat} />
+        </div>
+        {/* min-h-0 必不可少：否则 flex 子项不会收缩，ScrollArea 滚不起来 */}
+        <ConversationList
+          conversations={conversations}
+          selectedId={selectedConvId}
+          onSelect={handleSelectConversation}
+        />
+        <div className="border-t border-border p-3">
+          <SettingsButton showLabel />
+        </div>
+      </aside>
+
+      {/* ===== 右侧主区：顶部栏 + 消息区 + 输入区 ===== */}
+      <main className="flex h-screen min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border px-3">
+          <AgentSelector agents={AGENTS} value={agentId} onChange={setAgentId} />
+          <ModelSelector models={MODELS} value={model} onChange={setModel} />
+          <div className="ml-auto">
+            <SettingsButton />
+          </div>
+        </header>
+
+        {/* flex-1 + min-h-0：让内部 MessageList 的 overflow-y-auto 真正生效 */}
+        <section className="min-h-0 flex-1 bg-background">
+          <MessageList messages={messages} />
+        </section>
+
+        <footer className="shrink-0 border-t border-border p-3">
+          <ChatInput onSend={handleSend} />
+        </footer>
+      </main>
+    </div>
+  )
+}

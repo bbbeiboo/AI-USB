@@ -6,3 +6,28 @@ logs/*.log
 config/*.local.json
 .env
 *.log
+
+# --- Secrets / credentials (never commit) ---
+.env
+.env.*
+*.env
+auth.json
+credentials*.json
+tokens*.json
+secrets*.json
+user-config.json.bak
+Launcher/Data/secrets/
+Launcher/Config/user-config.json.bak
+**/*.pem
+**/*.key
+
+# --- Runtime state / build artifacts (never commit) ---
+# Launcher 运行时机器状态：SQLite 凭据库及其 WAL/SHM、agent 状态、用量日志
+Launcher/Data/
+# App 以自身为 ROOT 运行时写出的嵌套状态目录
+Launcher/App/Launcher/
+# 运行日志目录（*.log 已在上面忽略，这里整目录排除）
+Launcher/Logs/
+# Vite 构建产物（renderer/.gitignore 已忽略 dist，这里再兜一层，
+# 防止将来从仓库根执行 git add 时漏网）
+Launcher/App/renderer/dist/

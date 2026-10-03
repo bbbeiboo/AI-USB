@@ -288,3 +288,95 @@ return { dev: false, file: path.join(APP_DIR, 'index.html'), fallback: true };  
 - 3.5 安装 Tailwind + shadcn/ui
 - 3.6 三栏布局骨架（假数据，组件拆分）
 - 3.7 保持旧启动流程可用（本步 3.4 已把回退逻辑做完并验证，3.7 主要做整体复核）
+
+## 十一、3.5 + 3.6 变更记录：Tailwind v4 + shadcn/ui + 三栏布局
+
+### 11.1 Tailwind 版本与配置方案（v4）
+实际安装 **tailwindcss 4.3.3**（主版本 4）→ 采用 **v4 方案**：
+- 入口：`renderer/src/index.css` 用 `@import "tailwindcss";`（**不生成 tailwind.config.js**，内容扫描自动进行）
+- 主题：用 `@theme inline` 指令把 CSS 变量映射成 Tailwind 颜色工具类
+- 接线：**`@tailwindcss/vite` 插件**（Q1 选 A），在 `vite.config.mts` 的 `plugins: [react(), tailwindcss()]`；
+  因此**没有 postcss 配置文件**
+- Q3 已卸载 v4 下多余的 `postcss` / `autoprefixer` / `@tailwindcss/postcss`
+  （`node_modules/postcss` 仍在，但那是 **vite 自己的传递依赖**，package.json 里已不直接声明）
+- 额外安装 **`tw-animate-css@1.4.0`**：v4 版的 tailwindcss-animate，
+  提供 shadcn 组件用到的 `animate-in / fade-in-0 / zoom-in-95 / slide-in-from-top-2` 等类
+
+### 11.2 shadcn/ui：CLI 在本项目布局下走不通（重要）
+**实测结论**：`shadcn@2.10.0` 的 `init` 与 `add` **都要求"当前目录存在 package.json"**。
+我们的布局是 package.json 在 `Launcher/App/`、而 tsconfig 与 src 在 `Launcher/App/renderer/`，
+所以 CLI 直接拒绝并转为询问"是否新建 Next.js 项目"（首次执行零改动，已用 git status 核对）。
+
+**采用的做法**：
+1. 先按"避免多 package.json"的约束，**手写 `renderer/components.json`**（等价于 init 在 Tailwind v4 + slate + CSS variables 下会生成的内容）
+2. 为了让 `add` 通过检查，**临时**在 renderer/ 放一个最小 `package.json`，并用 registry 拉取 6 个组件
+3. 组件落盘到正确位置后，**删除临时 package.json 与其带出的 renderer/node_modules**，把新依赖合并进 `Launcher/App/package.json`
+4. 复查：`Launcher/` 下**仍然只有一份 package.json**（已用文件枚举验证）
+
+**安装的 6 个组件**（`renderer/src/components/ui/`）：
+`button.tsx`(2382B) · `input.tsx`(952B) · `dropdown-menu.tsx`(8394B) · `scroll-area.tsx`(1629B) · `separator.tsx`(670B) · `avatar.tsx`(2906B)
+
+### 11.3 与任务书预期不符的 3 处（新版 shadcn 已换代）
+| 项 | 任务书预期 | 实际（shadcn 新版） | 处理 |
+| --- | --- | --- | --- |
+| Style | `Default` | Tailwind v4 下只有 `new-york` 一种风格 | components.json 用 `"style": "new-york"` |
+| cn 工具 | 生成 `src/lib/utils.ts`（clsx + tailwind-merge） | 组件直接 `import { cn } from "cn"`，`cn` 是 **shadcn 官方发布的 npm 包**（repo `github.com/shadcn-ui/cn`，clsx+tailwind-merge 的编译替代品） | 两存：保留官方用法，**另外补一份 `src/lib/utils.ts` 做转发导出**（`export { cn } from 'cn'`），既满足验收"utils.ts 存在"，也给自写组件一个固定的 `@/lib/utils` 导入路径 |
+| 主题 CSS | init 注入 `:root { --background: oklch(...) }` 大块 | 新 registry 改为 `@import "shadcn/tailwind.css"`，且该文件**只含工具类/变体/关键帧、不含任何颜色令牌** | 为让主题在本仓库内**可审计、零运行时依赖**，显式写全 classic v4 slate 主题块（`:root` / `.dark` / `@theme inline` / `@layer base`） |
+
+**结论**：旧 CLI 的交互项（Style / Base color）与 `lib/utils.ts` 约定均已过时；
+本次交付的等价物是 `components.json`（baseColor=slate、cssVariables=true）+ 显式主题块 + `@/lib/utils` 转发层。
+
+### 11.4 三栏布局与组件清单（3.6.1 / 3.6.2）
+```
+renderer/src/
+├── App.tsx                     三栏骨架 + 全部前端状态
+├── data/mock-data.ts           假数据与共享类型（后续整体替换为真实数据源）
+├── lib/utils.ts                cn 转发导出
+└── components/
+    ├── sidebar/  ConversationList.tsx · NewChatButton.tsx
+    ├── topbar/   AgentSelector.tsx · ModelSelector.tsx · SettingsButton.tsx
+    ├── chat/     MessageList.tsx · MessageBubble.tsx · ChatInput.tsx
+    └── ui/       shadcn 的 6 个基础组件
+```
+- 布局：侧栏 `w-[260px] shrink-0` + 主区 `flex-1 min-w-0`；
+  主区内部 `h-14` 顶栏 + `flex-1 min-h-0` 消息区 + `shrink-0` 输入区
+- `SettingsButton` 用 `showLabel` 一个组件覆盖布局图里的 **⚙（顶栏图标）** 与 **[设置]（侧栏整行）** 两处入口
+- `min-h-0` 是让内部 `overflow-y-auto` 真正生效的关键（flex 子项默认不收缩）
+
+### 11.5 交互实测（3.6.3，全部前端状态，未连任何 IPC）
+| 交互 | 验证方式 | 结果 |
+| --- | --- | --- |
+| Agent 下拉 | 浏览器真实点击 `#agent-selector` → 菜单出现 4 项且当前项标"当前" → 点 Hermes | ✅ 按钮文本 OpenClaw → Hermes，菜单关闭 |
+| 模型下拉 | 点 `#model-selector` → 点 local-qwen | ✅ cloud-deepseek → local-qwen |
+| 会话高亮 | 点第 3 条会话，读各条 `background-color`/`font-weight` | ✅ 高亮从第 1 条迁移到第 3 条（accent 底色 + 500 字重） |
+| Enter 发送 | 输入文本后程序化点击 `#send-btn` | ✅ 消息数 2 → 4（user + assistant） |
+| 模拟流式 | 发送后 0.7s 抓取末条 AI 消息 | ✅ 仅渲染出前 30 余字，逐字追加生效；结束后为完整文案、输入框已清空 |
+| 窗口缩放 | 把根容器强制为 960px 后测元素边界 | ✅ 侧栏 260 + 主区 700 = 960，`main` 右边界未越界、输入框/发送键仍在主区内、消息区无横向滚动 |
+
+**960×600 是否够用**：够用。侧栏固定 260px，主区最小 700px；顶栏 56px，剩余高度给消息区（可滚动）与输入区，
+在 960×600 下不出现横向溢出。已在 3.4 把窗口下限设为 `minWidth: 960, minHeight: 600` 与之匹配。
+
+### 11.6 3.5 + 3.6 验证结果（闸门表）
+| 闸门 | 命令 | 结果 |
+| --- | --- | --- |
+| 语法 | `node --check` × 8 个后端 js | ✅ 8/8 |
+| 构建 | `npm run build:web` | ✅ EXIT=0，2015 modules，CSS 33.05 kB / JS 356.69 kB，零警告 |
+| 主题生效 | 浏览器读计算样式 | ✅ `--primary=oklch(0.208 0.042 265.755)`、按钮底色=primary、按钮文字=primary-foreground、输入框边框=`--border`、body 白底 + slate-950 文字 |
+| 自检 | `npm run selftest` | ✅ 4/4 READY，退出码 0 |
+| 单测 | `node --test tests/*.test.js` | ✅ 36 tests / 36 pass / 0 fail |
+| 端到端 | `npm run dev` | ✅ Electron 日志 `Window LoadURL http://localhost:5173` + `DidFinishLoad` + `Bounds 1281×801 resizable=true` |
+| 截图存证 | `browser-screenshots/step3-6-layout.png` | ✅ 1280×800，三栏布局与假数据渲染正常 |
+
+### 11.7 本步删除的文件（均为 create-vite 脚手架遗留、已无任何引用）
+| 文件 | 理由 |
+| --- | --- |
+| `renderer/package.json`（临时） | 仅为让 shadcn CLI 通过检查而建，用后即删，已把依赖合并进 App |
+| `renderer/node_modules/`（临时） | 上者带出的安装产物 |
+| `renderer/src/App.css` | create-vite 演示样式，3.6 重写 App.tsx 后无引用 |
+| `renderer/src/assets/{hero.png,react.svg,vite.svg}` | 模板演示图片，重写后无引用（已 grep 确认零引用） |
+
+### 11.8 【环境坑】Vite CSS 变化后 dev server 可能提供陈旧样式
+实测：改完 `index.css`（新增 `tw-animate-css` 与主题块）后，**仍在运行的旧 dev server 向浏览器提供了不含主题变量的 CSS**
+（表现为 `getComputedStyle(document.documentElement).getPropertyValue('--primary')` 为空、身体背景透明），
+而**同一份代码 `vite build` 的产物是正确的**。重启 dev server 后一切正常。
+**排查口诀**：主题/样式异常时，先把 dev server 重启一遍，再怀疑代码；并可用"构建产物里有没有该变量"来区分是代码问题还是服务陈旧。

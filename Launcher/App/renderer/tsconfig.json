@@ -1,8 +1,14 @@
 {
-  // 解决方案式 tsconfig：自身不编译文件，只把上面两个子配置串起来（tsc -b 用）
+  // 解决方案式 tsconfig：自身不编译文件，只把下面两个子配置串起来（tsc -b 用）。
+  // 这里额外声明 baseUrl/paths，是为了让 shadcn CLI 能解析 "@/" 别名
+  // （它读取 tsconfig.json 的 paths 来决定组件写到哪个目录）。
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] }
+  }
 }

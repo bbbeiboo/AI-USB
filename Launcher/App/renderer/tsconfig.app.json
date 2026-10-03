@@ -12,6 +12,10 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
+    /* 路径别名：'@/xxx' -> renderer/src/xxx（必须与 vite.config.mts 的 resolve.alias 一致） */
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+
     /* 打包器模式：与 Vite 的模块解析规则保持一致 */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

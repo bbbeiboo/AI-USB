@@ -9,11 +9,21 @@
 //   同理把 __dirname 换成 import.meta.dirname（native loader 不支持 __dirname）。
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path'; // Node 内置模块：拼接 outDir 绝对路径
+import tailwindcss from '@tailwindcss/vite'; // Tailwind v4 官方 Vite 插件（不需要 postcss 配置文件）
+import path from 'path'; // Node 内置模块：拼接 outDir / alias 绝对路径
 
 export default defineConfig({
-  // React 插件：提供 JSX 转换与开发期 Fast Refresh
-  plugins: [react()],
+  // React 插件：JSX 转换 + 开发期 Fast Refresh
+  // Tailwind v4 插件：直接接管 CSS 处理与按需生成原子类（内部用 Lightning CSS，自带前缀处理）
+  plugins: [react(), tailwindcss()],
+
+  // 路径别名：'@/xxx' 指向 renderer/src/xxx
+  // 需与 tsconfig.app.json 的 paths 保持一致，否则编辑器与构建行为不一致
+  resolve: {
+    alias: {
+      '@': path.join(import.meta.dirname, 'src'),
+    },
+  },
 
   // base 必须是相对路径 './'：Electron 生产环境用 file:// 协议加载
   // renderer/dist/index.html，若用默认的 '/' 会去请求磁盘根目录（file:///assets/...），

@@ -681,3 +681,18 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 **验收**：重建 asar 后 `win-unpacked/AI-Agent.exe --selftest` → 4/4 READY、ExitCode=0、stderr 空；
 claude-code = `E:\桌面\AI Agent 母盘`（正确）、hermes `·` 保持正确（无回归）、
 原始输出字节 `U+FFFD` 计数 = **0**；单测 36/36、语法 8/8、构建零警告。
+
+### 13.8 B2 核实 + B5 死代码清理（2026-10-03）
+
+**B2（进程状态持久化）——经实证核实为「已实现」，纠正扫描报告的误报**：
+`agent-process-manager.js` 自早期阶段即具备完整持久化闭环：启动时 `adoptSavedRecords()`
+从 `Launcher/Data/agent-state.json`（electron-store，兜底 JSON store）恢复记录并校验 PID 存活，
+死 PID 即 `forget()` 清除；运行中每次 start/stop 经 `persist()`/`forget()` 同步落盘
+（变更本就是低频事件，无需额外防抖）。隔离烟囱测试证据：
+- 预置存活 PID → 重启后 `getAgentStatus` = RUNNING（adopted）；
+- 预置死 PID（99999999）→ 状态 STOPPED、pid=null，store 落盘回 `{"agents": {}}`。
+**无代码改动，仅记录。**
+
+**B5（死代码清理）**：删除 `agent-process-manager.js` 中 `pidAlive()` 与 `stopTree()`
+（两处 `TODO: dead code` 标注 + 头部 TODO 行，共约 40 行）。全库引用核查仅 `_pm_test/harness-manifest.cjs:75`
+的日志字符串 `pidAliveAfter` 含同名子串、无实际调用。回归：语法 OK、根单测 36/36、`p16_pm_test.cjs` PASS。

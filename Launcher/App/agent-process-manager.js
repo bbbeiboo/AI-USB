@@ -21,8 +21,6 @@
 // Runtime status lives here (STOPPED/STARTING/RUNNING/STOPPING/ERROR) and is
 // mirrored into a small persistent store so a restarted Launcher can re-adopt
 // agents that are still alive.
-//
-// TODO: dead code, remove in a separate cleanup -> stopTree(), pidAlive()
 
 'use strict';
 
@@ -495,53 +493,11 @@ function stopByToken(token, log) {
   return stopAgent(hit[0], log);
 }
 
-// TODO: dead code, remove in a separate cleanup
-// rootPid must still exist AND look like a descendant-spawned shell from our launch.
-async function pidAlive(rootPid) {
-  return new Promise((resolve) => {
-    const ps = spawn('powershell.exe',
-      ['-NoProfile','-Command',`(Get-Process -Id ${rootPid} -ErrorAction SilentlyContinue) -ne $null`],
-      { stdio: ['ignore','pipe','ignore'], windowsHide: true });
-    let o = '';
-    ps.stdout.on('data', d => o += d.toString());
-    ps.on('close', () => resolve(/true/i.test(o)));
-  });
-}
-
-// TODO: dead code, remove in a separate cleanup
-// Stop the whole tree rooted at rootPid. We enumerate via CIM and Stop-Process by
-// explicit PID list. Never filter by image name.
-function stopTree(rootPid, log) {
-  return new Promise((resolve) => {
-    const script = `
-$root = ${rootPid}
-$queue = New-Object System.Collections.Queue
-$queue.Enqueue($root)
-$seen = @{}
-while ($queue.Count -gt 0) {
-  $p = $queue.Dequeue()
-  if ($seen.ContainsKey($p)) { continue }
-  $seen[$p] = $true
-  Get-CimInstance Win32_Process -Filter "ParentProcessId=$p" -ErrorAction SilentlyContinue | ForEach-Object { $queue.Enqueue($_.ProcessId) }
-}
-$toStop = $seen.Keys | Where-Object { $_ -ne $root }
-foreach ($pid in $toStop) { try { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } catch {} }
-try { Stop-Process -Id $root -Force -ErrorAction SilentlyContinue } catch {}
-Write-Output ("stopped=" + ($toStop | Measure-Object).Count)
-`;
-    const ps = spawn('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-Command', script],
-      { stdio: ['ignore','pipe','ignore'], windowsHide: true });
-    let o = '';
-    ps.stdout.on('data', d => o += d.toString());
-    ps.on('close', () => { if (log) log('[pm] ' + o.trim()); resolve(o.trim()); });
-  });
-}
-
 module.exports = {
   configure,
   setStatusHook,
   startAgent, stopAgent, restartAgent, stopByToken,
-  getAgentStatus, getAllStatuses, isRunning, pidAlive, stopTree,
+  getAgentStatus, getAllStatuses, isRunning,
   // exported for tests / diagnostics
   isPidAlive, buildPortableEnv,
 };

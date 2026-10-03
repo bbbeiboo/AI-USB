@@ -557,3 +557,108 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 4. `build:web` 后 `renderer/dist` 的文件名带内容哈希；asar 内的哈希与重新构建一致，
    可作为"打包产物是否对应当前源码"的快速校验手段。
 
+---
+
+## 十三、4.1.x：设置弹窗 + IPC 服务层 + P0 白屏修复记录（4.1.6 汇总）
+
+> 本节汇总第 4 步 4.1.x 的交付物与 4.1.5.4.4.5 / 4.1.5.4.5 两次验证的完整记录。
+> 4.1.x 改动同时覆盖渲染层（设置弹窗 3 组件 + IPC 服务层）与旧架构 `src/core` 的缺陷修复
+> （console 启动模式 + `findAgentBySignature` 签名找 PID、单窗口直拉、BOM 容错、密钥治理、CI 修复）。
+
+### 13.1 本步交付物一览
+
+| 类别 | 文件 | 说明 |
+| --- | --- | --- |
+| 设置弹窗 | `renderer/src/components/settings/SettingsModal.tsx` | 弹窗壳 + 三个 tab（API / 用量 / 关于）；用量统计与关于页为占位，待 4.2 / 4.4 |
+| API 表单 | `renderer/src/components/settings/ApiConfigForm.tsx` | 预设/自定义切换、模型拉取、密钥校验；**P0 修复所在（13.2）** |
+| 连接测试 | `renderer/src/components/settings/ConnectionTestButton.tsx` | 保存配置 + 连通性测试 |
+| IPC 服务层 | `renderer/src/services/ipc.ts` · `config-client.ts` · `agent-client.ts` | `hasLauncher` 判空 + `safeInvoke` 统一兜底：IPC 未注入或主进程抛异常时返回 fallback，**绝不把异常抛给 React 组件** |
+| 类型 | `renderer/src/types/launcher.d.ts` | preload 41 个 IPC 的 TS 类型 |
+| 接线 | `renderer/src/App.tsx` | 设置按钮 → 弹窗开关 |
+| 密钥治理 | `config/providers.json` 删除（staged）+ `config/providers.example.json` 新增（apiKey 置空）+ `.gitignore` 追加 | 4.1.4.6 B+ 方案：真实 API Key 不再入库 |
+| CI | `.github/workflows/build.yml` | test 步骤补 `CI: 'true'` env |
+
+### 13.2 P0 白屏完整记录（4.1.5.4）
+
+**现象**：在生产 bundle（`vite preview` 托管 asar 内同一份产物）中点击设置按钮，
+整个应用白屏——`#root` children 从 1 变 0，整棵 React 树被卸载。
+
+**根因**：`ApiConfigForm.tsx:135-142` 裸读 `presets.openai.baseUrl`。
+预设表为空（纯浏览器内 IPC 不可用 → presets 兜底为空对象）时抛
+`Uncaught TypeError: Cannot read properties of undefined (reading 'baseUrl')`，
+错误在渲染期抛出且无错误边界，React 随即卸载整棵根树。
+
+**修复**：改为 `presets.openai?.baseUrl || ''` 判空读法，并顺带排查全部 26 处裸读，
+确认无同类隐患（含隔离容器 4 场景、空预设表不崩用例）。
+
+**双重验证**：
+
+| 验证 | 修复前（旧 hash `index-CXz9f620.js`） | 修复后（`index-eExaiHHn.js`） |
+| --- | --- | --- |
+| `#root` children | **0（树被卸载，白屏）** | **1（始终 ≥1）** |
+| 设置面板 | 无 | 12 个 `cfg-*` 表单元素全部渲染，随后按设计降级 |
+| 抛错 | `TypeError: ... reading 'baseUrl'` | 无 TypeError，仅 3 条设计内降级 `console.error` |
+
+1. **前后对照**（同运行时）：`npx vite preview --config renderer/vite.config.mts --port 4174 --strictPort`
+   托管与 asar 内同一份产物，修复前后各跑一遍，观测项如上表——证明因果关系，而非"修完能跑"。
+2. **asar 检索**：直接在 `app.asar` 内检索 `openai?.baseUrl` 命中（旧写法 `presets.openai.baseUrl` 零命中），
+   证明修复代码确实进了打包产物——比检索组件 id 更强的打包一致性证据。
+
+**生产 bundle 实点完整观测**：MutationObserver 瞬时捕获 25 个 id 全部命中
+（`settings-modal*` / `settings-tab-*` ×3 / `api-config-form` / `agent-tab-*` ×4 / `cfg-*` ×12 / `conn-test-saved` / `settings-error` / `settings-retry`）；
+随后按设计降级：`#api-config-form` 卸载 → `#settings-error` 显示
+`读取配置失败：IPC 不可用（preload.js 未加载）` + 重试按钮。
+关闭弹窗后会话界面完好还原（agent-selector / model-selector / chat-input / 消息均在），
+错误数保持 3 条零新增。
+**降级本身是预期边界**（ipc.ts 在模块加载期固化 `hasLauncher`，纯浏览器注入不了 preload），
+真实 Electron 壳内 IPC 正常，由真实窗口日志 `AuthIpc Registered` + `LoadFile fallback=false` 佐证。
+
+### 13.3 流程改进 6 条（自 4.1.5.4 起固化）
+
+1. **编译通过 ≠ 首帧不崩**。构建零警告、tsc 全绿都不代表运行期不白屏；每个可交互 UI 必须真实打开后以 DOM 观测为准。
+2. **每个 UI 组件必须真实打开验证**：以 MutationObserver 瞬时捕获元素 id（渲染后立即卸载的降级态也能抓到），不能只看"没报错"。
+3. **修复代码必须在 asar 内检索确认已打包**：检索修复表达式（如 `openai?.baseUrl`）比检索组件 id 更强——id 相同不代表代码已更新。
+4. **每轮验证后做清理比对**：进程数 / 端口 LISTENING / `Launcher/Data/` 逐文件快照比对（体积 + SHA256 + mtime）/ git 状态逐行比对，确保零测试残留。
+5. **修复必须做前后对照**：同一运行时、同一观测手段跑"修复前 vs 修复后"，才能证明因果；只跑修复后无法排除"本来就没问题"。
+6. **环境陷阱必须固化为工具/脚本对策**：如 `scripts/dev-launcher.ps1` 自动清除 `ELECTRON_RUN_AS_NODE`，而不是每次靠人记住。
+
+### 13.4 环境陷阱（本次新增 / 精确化）
+
+1. **`ELECTRON_RUN_AS_NODE=1` 由 DSH 宿主注入**（第五节已溯源，本步补充两个新事实）：
+   - 打包 exe 在该变量下**秒退、日志零增长、`-PassThru` 退出码为空**（读 stdin 遇 EOF 以 code 0 退出），
+     表现极易误判为"应用坏了"；清除变量后同一 exe 立刻正常起窗。
+   - **探测手段也有坑**：`& $exe --version` 对 Electron 不生效而是直接起窗，会一直挂到工具超时并留下额外启动实例。
+     正确做法：`Start-Process` + 逐秒有界轮询 + 上限，跑完强制结束并核对 `launcher.log` 增量与启动次数一一对齐。
+2. **portable 单文件 exe 不转发 stdout、退出码不可信**（12.8.2 已立约定，本步再次确认）：
+   需要断言 `SELFTEST_JSON` 的场景一律用 `win-unpacked/AI-Agent.exe --selftest`。
+3. **应用日志写 UTC，文件系统 mtime 是本地时间（UTC+8）**：`Get-Date = 19:53:42` 对应日志 `11:53:05`，
+   差值恰 8 小时且与 mtime 自洽。对时间轴时**勿再误判成"日志没写"**。
+   —— 顺带把 12.8.3 的 claude-code 版本串乱码精确化到字节级：该段原始字节含 `EF BF BD`×4
+   （U+FFFD 的 UTF-8 编码），说明**损坏发生在写入文件之前**（子进程 stdout 按 GBK 输出、父进程按 UTF-8 解码），
+   与读取方式、文件编码均无关；属既有显示层问题，`status` 判定不受影响（待后续专项根修）。
+4. **点关闭按钮 = 隐藏进托盘，进程不退出**（`main.js` close→hide 设计）：验证收尾必须强制结束进程，
+   否则会留下 4 个常驻进程污染下一轮观测。
+
+### 13.5 验证证据与清理比对（4.1.5.4.4.5 + 4.1.5.4.5）
+
+| 证据 | 结果 |
+| --- | --- |
+| ① 真实窗口启动 | `Auth Ready` + `AuthIpc Registered`（5 channel）+ `LoadFile ... app.asar\renderer\dist\index.html fallback=false` + `DidFinishLoad` 全命中；进程稳定 4 个 |
+| ② `--selftest` | `ok:true`，4/4 READY（openclaw / hermes / codex / claude-code），约 2 s 退出，不开窗（日志无 `Window LoadFile`） |
+| ③ vite preview 实点 | 见 13.2 双重验证表 |
+| 清理比对 | AI-Agent / electron 进程 0；4174 TimeWait 无 LISTENING；`Launcher/Data/` 与快照逐文件一致（三个 secrets .bin 体积+SHA256 未变、`app.db` 45,056 B 未变、`agent-state.json` 内容逐字节一致仅 mtime 刷新、`app.db-shm/wal` 被 SQLite 正常收尾）；git 状态与开始时逐行一致 |
+
+### 13.6 11 项手动清单（交付前人工过一遍）
+
+1. 登录层：注册新账号 → 登出 → 重新登录，密码错误分支有提示。
+2. 四个 Agent（OpenClaw / Hermes / Codex / ClaudeCode）逐个启动，确认单窗口、进程可见、停止按钮真正结束进程。
+3. Agent 启动后停止，确认无残留进程、无多余窗口。
+4. 设置弹窗内 API 配置表单 12 个 `cfg-*` 元素完整（provider / baseurl / model / fetch-models / model-list / key / toggle-key / key-status / validate / test-form / save / clear-key）。
+5. 保存自定义 baseUrl → 重开弹窗仍是自定义值（dirty 标记不误清）。
+6. 密钥保存后重开：密文态显示、状态徽标正确；清除密钥后回到未配置态。
+7. 连接测试按钮：保存配置成功 / 失败两分支均有可读反馈。
+8. 用量统计 tab：显示占位（待 4.2 迁移）不报错。
+9. 关于 tab：显示占位（待 4.4 补）不报错。
+10. 托盘：图标存在、菜单可恢复窗口；点关闭按钮 → 窗口隐藏进托盘、进程仍在（按设计）。
+11. **真实 `AI-Agent.exe` 窗口内点开设置弹窗，观察表单出现并可保存/重开** —— `browser_*` 工具无法附加 Electron 窗口，**「未实点，需用户手动确认」**。
+

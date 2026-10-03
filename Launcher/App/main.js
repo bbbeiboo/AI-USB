@@ -1195,7 +1195,8 @@ function createWindow() {
     // 允许用户调整大小，但限制最小可用尺寸，避免三栏被压垮
     minWidth: 960, minHeight: 600, resizable: true,
     title: 'AI Agent U盘版',
-    backgroundColor: '#0f172a',
+    // v2 亮色 UI（设计规范-v2 §2）：窗口底色换 Apple 灰，避免亮色界面出现前的暗色闪烁
+    backgroundColor: '#f5f5f7',
     webPreferences: { preload: path.join(APP_DIR, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.setMenuBarVisibility(false);

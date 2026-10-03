@@ -931,3 +931,129 @@ openclaw/hermes/codex/claude-code），与 AgentSelector 同源，不引第二�
    无依赖申报项。进程树枚举/查杀未参考外部实现（pm 层 tree-kill 已实测在案）。
 6. **清单状态**：13.6 第 **2/3 条随本轮关闭**（b 项证据）；**第 1 条（登录接线）仍开放**（auth 5 通道已注册
    未消费，下一轮单独做）。OpenClaw 配对仍需用户人工完成。
+
+---
+
+## 13.13 UI 重做 v2 —— Apple 风格 + 全量公共按钮 + stub 服务接口层（草稿，随阶段补全）
+
+### 13.13.0 需求裁决记录（用户原意，不得偏移）
+
+1. 每个按钮点击后有真实可见反馈（状态流转/内容变化/可见结果）——量化标准见按钮清单第三列；
+2. 不照搬 Hermes 桌面端，按钮集按用户整理的「行业公共功能按钮清单」实现（12 项）；
+3. Apple 设计语言（可执行数值拆解，见《设计规范-v2.md》），Agent 选择器收进右上角图标；
+4. **刻意不做**三个 stub 只能造假的按钮：模型切换器、检查更新、帮助——留到真接线轮。
+
+### 13.13.1 阶段 0：来源审计（时间盒内完成，结论如下）
+
+| 对象 | 开源/许可证 | 布局参考价值 |
+| --- | --- | --- |
+| DeepSeek Harness Desktop（github.com/agent-earth/deepseek-harness-desktop） | 开源，**MIT**（仓库 LICENSE 可查） | 「极简桌面 wrapper」范式：单窗口承载 Web 工作台、免配置开箱即用；与本项目形态同构（Electron 壳 + 本地 Agent）。参考其「壳层让位于内容」的信息层级 |
+| Hermes Agent Desktop（Nous Research，hermes-agent.nousresearch.com） | 开源，**MIT**（官网元数据明示 "free under the MIT license"；`hermes desktop` 从源码构建） | 终端 + 原生桌面双形态、单一 Agent 会话工作台、持久记忆/技能面板的信息组织 |
+
+审计方式：公开页面只读（未 clone、未拷任何文件入库）；两项目均为 MIT → 思路与布局皆可参考。
+**本任务按钮集不依赖审计结果**（按用户清单实现），审计仅支撑布局决策。
+若本轮报告出现「模型切换器/检查更新/帮助」按钮即为越界（用户裁决 4）。
+
+### 13.13.2 阶段 1：设计规范
+
+全文见《`Launcher/App/设计规范-v2.md`》（先于代码落盘）。要点：系统字体栈 + 11/13/15/17/20/28
+字号阶梯；中性灰阶 #f5f5f7/#1d1d1f，彩色仅语义（蓝 #0A84FF 主操作、绿 #30D158 RUNNING、
+黄 #FFD60A STARTING、红 #FF453A STOP/ERROR）；卡片圆角 10-12px、按钮 6-8px；阴影单档
+`0 1px 3px rgba(0,0,0,0.08)`；顶栏/侧栏 `backdrop-filter: blur(20px) saturate(180%)`；
+动效 150-200ms ease-out + 按压 scale(0.97)；图标 lucide 1.5px stroke、16/20px 两档。
+**禁止拷贝 Apple SF 字体/图标文件**（硬规则 2）——字体走系统栈、图标走 lucide，零新素材。
+每个组件的 AutomationId 在规范中逐项标注（沿用既有命名惯例）。
+
+（阶段 2-5 结果待补于 13.13.3+。）
+
+### 13.13.3 阶段 2：服务接口层（先于 UI 落地）
+
+| 文件 | 内容 |
+| --- | --- |
+| `services/agent-control-types.ts` | 纯类型：`AgentStatus`（pm 同名五态）/ `AgentSummary` / `SessionMeta` / `OutputEntry`（含 streaming 分片语义）/ `ExportedSession` / `AgentControlService` 全按钮集接口 |
+| `services/agent-control-stub.ts` | stub 内存状态机：start 800ms STARTING→RUNNING、stop 500ms、restart 串联（可注入延时供单测）；每 Agent 3 条种子会话+演示输出；sendInput 回显+2 行模拟响应（1 行打字机分片，同 id 原位更新）；exportSession 生成真实 md/json 字符串；`__calls` 记录全部调用；订阅返回**真实退订函数** |
+| `services/agent-control-real.ts` | 下一轮骨架：每方法 `throw not-wired-yet`；文件头 = **通道映射表**（listAgents→manifest+probe、start→agent:launch、stop→agent:stop、restart→agent:restart、状态→agents:status 推送 + agent:status；会话/输出/输入/导出需新增 agent:sessions|output|input|export 通道——这些依赖「Agent 会话数据源」裁决，接线前需与用户确认） |
+| `services/agent-control.ts` | 工厂 `getAgentControlService()` 唯一切换点：`useRealService()` 函数返回 false（**故意用函数而非常量**——esbuild 对常量做折叠+DCE 会把 real 骨架整支从 bundle 删掉，实测切换前后 `not-wired-yet` asar 命中 0→1） |
+| `tests/agent-control.test.js` | **14 条新单测**（Node strip-types 直载 TS 源码——stub 仅 import type 无运行时依赖，Node 24 原生支持）：工厂契约/名单对齐/start-stop-restart 事件序列/会话切换/清空撤销/流式响应/导出格式/pin 排序/__calls/防呆/real 骨架契约 |
+
+接口相对任务书的唯一补充：`undoClearOutput(id)`（清空输出的「可撤销提示」需要恢复入口，
+5s 窗口由 UI 计时；real 实现可映射为重新拉取或 throw）。已如实标注。
+
+### 13.13.4 阶段 3：UI 实现与改动清单
+
+- **令牌层**（index.css）：:root 换 Apple 灰阶（#f5f5f7 窗口底/#1d1d1f 主文字/#6e6e73 次要文字/
+  #0A84FF 主操作蓝）；新增状态语义令牌 status-running/starting/stopped/error（绿#30D158/黄#FFD60A/
+  灰#8e8e93/红#FF453A）映射为 `bg-status-*` 等工具类；`--shadow-apple: 0 1px 3px rgba(0,0,0,0.08)`
+  单档阴影；`.glass` 毛玻璃工具类（blur(20px) saturate(180%)）；body 系统字体栈。
+  `.dark` 保留旧 slate 值作为暗色预留（本轮不交付切换）。
+- **新组件**：`ui/toast.tsx`（统一 Toast：模块级 store、3-5s 自动消失、可带撤销动作）、
+  `ui/status-badge.tsx`（StatusDot/StatusBadge，200ms 颜色过渡）、`ui/agent-avatar.tsx`（字母头像
+  O/H/C/CC，中性灰渐变）、`ui/popover.tsx`（radix-ui 统一包 Popover 封装——**零新依赖**）、
+  `layout/TopBar.tsx`（毛玻璃顶栏：产品名+当前会话名+agent-switcher+app-settings）、
+  `layout/SideBar.tsx`（Agent 列表+会话列表）、`layout/StatusBar.tsx`（状态+baseUrl 摘要+stub 标识）、
+  `workbench/Workbench.tsx`（头部生命周期组/输出工具条/输出流/输入行）、`hooks/use-workbench.ts`（编排）、
+  `lib/clipboard.ts`（clipboard API + execCommand 兜底）。
+- **按钮按压反馈**（ui/button.tsx 基类）：`duration-150 ease-out active:scale-[0.97]`。
+- **主进程一行**（main.js）：窗口 backgroundColor #0f172a→#f5f5f7（亮色 UI 前的暗色闪烁消除；
+  不触及托盘/日志/单实例/pm）。
+- **删除旧壳**（git rm 10 文件）：AgentSelector/ModelSelector/SettingsButton/ConversationList/
+  NewChatButton/ChatInput/MessageBubble/MessageList/AgentControlStrip(13.12)/useAgentRuntime(13.12)/
+  mock-data.ts。13.12 的真接线成果由 real 骨架映射表继承（start/stop 通道已实测在案）。
+
+### 13.13.5 阶段 4：验收结果
+
+**四闸门**：语法 24/24；单测 **50/50**（36 旧 + 14 新，0 fail）；selftest **4/4 READY** ExitCode=0
+（修复后重打包再验）；electron-builder **EXIT=0** 无 ⨯ 级警告。
+tsc：`--noEmit` 零错误（allowImportingTsExtensions 下服务层 .ts 显式扩展名导入全通过）。
+
+**asar 检索**（win-unpacked/resources/app.asar）：
+- 新 AutomationId 全命中：agent-switcher / agent-ctrl-start|stop|restart|new-session|clear|copy|
+  export(-md/-json)|send|logs|pin / app-settings / status-bar / output-area / input-box / toast-host
+- `not-wired-yet` = 1（real 骨架在包内——esbuild DCE 修复后）
+- 新 bundle index-Dfe1xKwb.js 命中
+- 旧 id **零命中**：agent-selector / model-selector / new-chat-btn / chat-input / agent-strip 全 0
+
+**真实 exe UIA 全按钮走查**（实例 23152：Win32_Process CreationTime 23:34:06 == 日志 Launcher Started
+15:34:06 UTC；收尾 Stop-Process 自己的实例）：
+
+| # | 按钮 | AutomationId | 实测反馈 | 证据 |
+| --- | --- | --- | --- | --- |
+| 1 | 启动 | agent-ctrl-start | 徽标 已停止→运行中（绿点三处同步：徽标/侧栏/状态栏）；按钮翻转为停止、重启解禁 | 截图 13.13-real-exe-running.png |
+| 2 | 停止 | agent-ctrl-stop | 运行中→已停止；按钮回启动、重启禁用 | 截图 13.13-real-exe-stopped.png |
+| 3 | 重启 | agent-ctrl-restart | 点击成功（stop→start 流转后仍运行中） | UIA Invoke |
+| 4 | 新建会话 | agent-ctrl-new-session | 输出清空+侧栏新条目「新会话 23:41:01」置顶高亮 | UIA 枚举 |
+| 5 | 清空输出 | agent-ctrl-clear | 输出清空 + toast 带撤销 | 截图 13.13-real-exe-clear-toast.png |
+| 6 | （撤销） | toast 内 | 点撤销 → 输出完整恢复（剪贴板复核 8 行=清空前全部条目） | Get-Clipboard |
+| 7 | 复制输出 | agent-ctrl-copy | 剪贴板=全部条目文本（7 行逐字核对） | Get-Clipboard |
+| 8 | 导出 md | agent-ctrl-export-md | 真实文件落盘（md 结构完整含时间戳条目）→ 核对后删除 | Downloads 核对 |
+| 9 | 导出 json | agent-ctrl-export-json | 真实文件落盘（JSON.parse 通过，7 entries）→ 核对后删除 | Downloads 核对 |
+| 10 | 发送 | agent-ctrl-send | 回显+模拟响应+流式行完整渲染 | 截图 13.13-real-exe-send.png |
+| 11 | 打开日志 | agent-ctrl-logs | toast「日志路径已复制（stub）」，剪贴板=`<便携根>/Launcher/Logs/launcher.log（stub 演示）` | Get-Clipboard |
+| 12 | 置顶 | agent-ctrl-pin | Toggle 态翻转；侧栏置顶排首+「已置顶」图标（agent-list-pin-hermes） | UIA 枚举 |
+| 13 | Agent 切换 | agent-switcher-item-codex | 三处同步：顶栏头像 O→C、工作台 Codex、侧栏高亮（截图还捕到毛玻璃 Popover 展开态） | 截图 13.13-real-exe-switch-codex.png |
+| 14 | 设置 | app-settings | 既有弹窗完整回归：三 tab + 全 cfg-* + 关闭重开数据重拉 | UIA 枚举 |
+
+**浏览器降级**（vite preview，1280×720）：stub 在纯浏览器环境完整演示——发消息、回显、流式响应、
+徽标/列表/状态栏全部正常，无任何 Electron 依赖。截图 13.13-browser-stub-demo.png。
+
+**终态哈希**：15/15 与基线**逐一一致**（user-config/model-cache/pricing/provider-presets/
+providers.json/example/agents.json/hermes config.yaml(+.bak)/agent-state.json/app.db/3×secrets/
+usage.jsonl）——**stub 模式真·零净写入**；launcher.log 81649→82408（+759，1 次启动+关闭）。
+导出的 2 个临时文件核对后即删（不入库）。
+
+### 13.13.6 本轮发现（如实披露）
+
+1. **用户再次实时协同测试**：走查期间用户在真机上切换 Agent、给四个 Agent 全点了启动、在种子会话里
+   发了「nihao」、手动输入了「niha」——stub UI 经受了真人多点并行操作，全部按钮反馈正常。
+2. **Electron blob 下载怪癖**：`URL.revokeObjectURL` 1s 后触发会把下载永久卡在 `.tmp`（内容已完整
+   落盘但改名事件不再发生）——revoke 放宽到 30s 修复（本轮导出核对用的是卡住前的完整 .tmp 内容）。
+3. **esbuild DCE 坑**：`const USE_STUB = true` 会让 real 骨架被 tree-shake 出 bundle（`not-wired-yet`
+   asar 命中 0）——切换点改为函数返回值后命中 1。这对「下一轮真接线只改一处」的目标至关重要：
+   骨架必须在包里等着被切换。
+4. **uiaclick.ps1 修复**：`-Aid ''` 时旧脚本仍按空 AutomationId 查找（匹配到第一个无 id 元素即返回），
+   导致按 Name 找「撤销」按钮失败——已修为 Aid 为空时跳过第一段查找（工作区外脚本，不入库）。
+5. **导出文件落点**：本机 Downloads 重定向到 `E:\下载`（注册表 shell folders），Electron 下载照常跟随。
+6. **依赖申报**：无（radix-ui 统一包自带 Popover；lucide 已有；毛玻璃纯 CSS）。零 npm install。
+7. **下一轮清单**：真接线（realAgentControlService 逐方法实现 + 新增 agent:sessions/output/input/export
+   通道，**接线前需与用户确认 Agent 会话数据源**）→ 模型切换器/检查更新/帮助（真功能轮）→
+   登录接线（13.6 第 1 条）→ OpenClaw 配对（用户人工）。

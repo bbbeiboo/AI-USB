@@ -1,24 +1,22 @@
 /**
- * 左侧栏（规范 §7）：半透明灰底；Agent 列表（置顶优先）+ 当前 Agent 的会话列表。
+ * 左侧栏（规范 §7，13.15 更新）：会话列表 + 左下角个人用户卡。
+ * Agent 列表已整体删除——切换只走顶栏 logo 一个按钮（用户裁决：只用这一个按钮切换 Agent）。
+ * 用户卡为展示态：真实身份来自登录接线轮（13.6 第 1 条），stub 阶段不伪造个人中心弹窗。
  */
-import { Pin, Plus } from 'lucide-react'
+import { Settings, User, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AgentLogo } from '@/components/ui/agent-logo'
-import { StatusDot } from '@/components/ui/status-badge'
-import type { AgentSummary, SessionMeta } from '@/services/agent-control-types'
+import type { SessionMeta } from '@/services/agent-control-types'
 import { cn } from 'cn'
 
 interface Props {
-  agents: AgentSummary[]
-  currentId: string | null
   sessions: SessionMeta[]
   sessionId: string | null
-  onSwitchAgent: (id: string) => void
   onNewSession: () => void
   onSwitchSession: (id: string) => void
+  onOpenSettings: () => void
 }
 
-export default function SideBar({ agents, currentId, sessions, sessionId, onSwitchAgent, onNewSession, onSwitchSession }: Props) {
+export default function SideBar({ sessions, sessionId, onNewSession, onSwitchSession, onOpenSettings }: Props) {
   return (
     <aside id="sidebar" className="flex w-[260px] shrink-0 flex-col border-r border-border/70 bg-sidebar">
       <div className="p-2.5">
@@ -28,28 +26,7 @@ export default function SideBar({ agents, currentId, sessions, sessionId, onSwit
         </Button>
       </div>
 
-      <div id="agent-list" className="space-y-0.5 px-2">
-        {agents.map((a) => (
-          <button
-            key={a.id}
-            id={`agent-list-item-${a.id}`}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-accent/70',
-              a.id === currentId && 'bg-card shadow-apple',
-            )}
-            onClick={() => void onSwitchAgent(a.id)}
-          >
-            <AgentLogo agentId={a.id} short={a.short} size="xs" />
-            <span className="truncate text-[13px]">{a.name}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              {a.pinned ? <Pin id={`agent-list-pin-${a.id}`} className="size-3 text-muted-foreground" strokeWidth={1.5} aria-label="已置顶" /> : null}
-              <StatusDot status={a.status} />
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="px-3.5 pb-1 pt-3 text-[11px] text-muted-foreground">会话</div>
+      <div className="px-3.5 pb-1 pt-1 text-[11px] text-muted-foreground">会话</div>
       <div id="session-list" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {sessions.length === 0 ? (
           <div className="px-2 py-3 text-[11px] text-muted-foreground">暂无会话，点上方新建</div>
@@ -68,6 +45,24 @@ export default function SideBar({ agents, currentId, sessions, sessionId, onSwit
             </button>
           ))
         )}
+      </div>
+
+      {/* ===== 个人用户卡（13.15）：左下角身份展示 + 设置齿轮 ===== */}
+      <div id="user-card" className="flex shrink-0 items-center gap-2.5 border-t border-border/70 p-2.5">
+        <div
+          id="user-avatar"
+          aria-hidden
+          className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border/60 bg-accent text-muted-foreground"
+        >
+          <User className="size-4" strokeWidth={1.5} />
+        </div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div id="user-name" className="truncate text-[13px] font-medium">本地用户</div>
+          <div className="truncate text-[11px] text-muted-foreground">stub 演示账户</div>
+        </div>
+        <Button id="app-settings" variant="ghost" size="icon-sm" aria-label="设置" title="设置" onClick={onOpenSettings}>
+          <Settings className="size-[18px]" strokeWidth={1.5} />
+        </Button>
       </div>
     </aside>
   )

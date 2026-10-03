@@ -14,7 +14,7 @@
     "build:web": "vite build --config renderer/vite.config.mts",
     "build:app": "cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable",
     "build": "npm run build:web && npm run build:app",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test ../../tests/*.test.js"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

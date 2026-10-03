@@ -1113,3 +1113,54 @@ Agent，不做品牌宣传、不修改再创作。13.13 硬规则 2「不拷第�
    绝对引用在 http 预览正常、file:// 生产 404——渲染层引用 public 资产一律写相对路径。
 2. **打包 EBUSY/EPERM**：electron-builder 清理 win-unpacked 前，必须先结束仍在运行的 exe 实例
   （本轮 ffmpeg.dll EPERM 即此因）；目录本身被 shell 占用时改名绕过再重建（见 13.13 收尾）。
+
+## 13.15 追加裁决：顶栏 logo 即切换器 + 删侧栏 Agent 列表 + 左下用户卡（用户口述点单）
+
+### 13.15.1 需求与实现
+
+用户原话：「我的意思是把AI Agent这个logo换成正在使用的agent logo，并且做到一个按钮点击左键点击可选择切换agent，
+把logo下方的agent列表删掉，只用这一个按钮去切换选择agent，还有设置按钮放到左下方，并且在左下方做一个个人用户界面」。
+
+对 13.14 的再裁决（13.14 把切换器放到了工作台头部 logo，本轮纠正为顶栏品牌位）：
+1. **顶栏「AI Agent」品牌位 = 当前 Agent 官方 logo + 名称 + chevron，左键弹出切换菜单**——全应用唯一切换入口；
+2. **侧栏 Agent 列表整段删除**（`agent-list` / `agent-list-item-*` / `agent-list-pin-*` 不复存在），
+   只留新建会话 + 会话列表；置顶/状态点在切换菜单与工作台头部保留，无功能损失；
+3. **设置齿轮从顶栏移到侧栏左下**，并入新增的**个人用户卡**：圆形头像（User 图标）+「本地用户」+
+   「stub 演示账户」+ 齿轮（`app-settings` Aid 不变，设置弹窗三组件逻辑不动）。
+
+改动 4 个组件 + 2 个文档：`TopBar.tsx`（切换器 + 受控 Popover 选中即收起 + 加载期回退「AI Agent」文案）、
+`SideBar.tsx`（删 agent 列表 + 用户卡）、`Workbench.tsx`（头部回归纯展示 `workbench-agent`，输入框补动态
+`aria-label`）、`App.tsx`（重新接线 + 布局注释）。**用户卡为展示态**：真实身份来自登录接线轮（13.6 第 1 条），
+stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按钮逻辑）。
+
+### 13.15.2 验收
+
+- 四闸门：tsc 零错误、vite 构建成功（index-YCay8mMG.js）、单测 50/50、打包 EXIT=0。
+- asar（asar1315 提取后即删）：`agent-switcher`=2、`agent-switcher-item`=1、`user-card`=1、`user-name`=1、
+  `app-settings`=1、`not-wired-yet`=1、四 logo 资产在；**`agent-list`=0（删除达成）**。
+- **真实 exe 实测**（实例 2952）：
+  截图 13.15-real-exe-initial.png（顶栏 OpenClaw 龙虾标+chevron，顶栏无齿轮，侧栏仅会话列表，
+  左下用户卡「本地用户/stub 演示账户」+齿轮）→ 点 `agent-switcher` →
+  截图 13.15-real-exe-switcher-open.png（菜单自顶栏左上下落，四官方 logo + 状态点）→
+  点 `agent-switcher-item-claude-code` → 截图 13.15-real-exe-switched-claude.png（顶栏/工作台头部/状态栏/
+  输出/占位符全部变 Claude Code，**菜单已自动收起**）→ 点左下 `app-settings` →
+  截图 13.15-real-exe-settings-from-usercard.png（设置弹窗正常打开，cfg-* 11 项命中，密钥仍掩码）。
+- **中途发现并修复两处**（修复后重打包重走查）：
+  1. Popover 选中后不收起（radix 默认行为）——菜单挂顶栏后会挡住侧栏，改受控 `open/onOpenChange`，
+     选中即 `setMenuOpen(false)`；UIA 菜单残留 0 验证；
+  2. 输入框占位符切 Agent 后 UIA Name 恒为「向 OpenClaw 发送消息」（截图像素证明 DOM 占位符实际正确，
+     Chromium 对 placeholder 派生的可访问名不刷新）——补动态 `aria-label="向 ${agent.name} 发送消息"`，
+     UIA Name 恢复随 Agent 更新。
+- **零净写入：15/15 哈希与基线一致**（diff 仅 launcher.log +1518 字节 = 两次启动关闭的正常日志）。
+- 浏览器侧未单独重截：本轮为组件重排 + Props 接线，无资产路径改动，file://（更严一侧）已在 exe 覆盖。
+
+### 13.15.3 新坑记录
+
+1. **Chromium UIA Name 缓存**：`placeholder` 动态变化后，UIA 树里 Edit 的 Name 恒停留首挂载值
+   （两次走查确认非树滞后），像素截图证明真实 DOM 已更新——动态占位符一律补 `aria-label` 作可访问名主源。
+2. **`Launcher/App` 的 `npm test` 脚本指向不存在的本地 `tests/`**（一直静默跑 0 个）——修正为
+   `node --test ../../tests/*.test.js`（根目录 50/50 与从 Launcher/App 运行结果一致，cwd 无关）。
+3. **用户开着实例来提需求**：app.db 被运行中实例独占锁定 → 基线哈希 `Get-FileHash` 读不了；
+   打包也会 ffmpeg.dll EPERM。流程改为：先关实例（无持久状态，stub 轮安全）→ 基线 → 打包 → 实测 → 关 → 终检。
+4. **visual-judge 子代理不可用**（provider 未配置）：按协议降级为本体查验截图（四张全过：
+   官方 logo 均渲染、无字母回退、无遮挡错位）。

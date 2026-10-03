@@ -3,15 +3,10 @@
  * 输出流（stub 驱动，含流式条目）→ 底部输入行。
  */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Copy, Download, Eraser, FileText, Pin, PinOff, Play, RotateCcw, SendHorizontal, Square } from 'lucide-react'
+import { Copy, Download, Eraser, FileText, Pin, PinOff, Play, RotateCcw, SendHorizontal, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AgentLogo } from '@/components/ui/agent-logo'
-import { StatusBadge, StatusDot } from '@/components/ui/status-badge'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { StatusBadge } from '@/components/ui/status-badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,42 +71,12 @@ export default function Workbench({ wb }: { wb: Workbench }) {
 
   return (
     <section id="workbench" className="flex min-w-0 flex-1 flex-col bg-background">
-      {/* ===== 头部：logo 即切换器（13.14）+ 徽标 + 生命周期 ===== */}
+      {/* ===== 头部：当前 Agent 展示（13.15：切换只走顶栏 logo，此处回归纯展示）===== */}
       <header className="flex shrink-0 items-center gap-3 border-b border-border/70 px-4 py-2.5">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              id="agent-switcher"
-              className="-ml-1.5 flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-150 ease-out hover:bg-accent"
-              aria-label={`当前 Agent：${agent.name}，点击切换`}
-              title="点击切换 Agent"
-            >
-              <AgentLogo agentId={agent.id} short={agent.short} size="lg" />
-              <span className="truncate text-[17px] font-semibold leading-tight">{agent.name}</span>
-              <ChevronDown className="size-4 shrink-0 opacity-60" strokeWidth={1.5} aria-hidden />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-56 p-1.5">
-            {wb.agents.map((a) => (
-              <button
-                key={a.id}
-                id={`agent-switcher-item-${a.id}`}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ease-out hover:bg-accent',
-                  a.id === agent.id && 'bg-accent/70',
-                )}
-                onClick={() => void wb.switchAgent(a.id)}
-              >
-                <AgentLogo agentId={a.id} short={a.short} size="xs" />
-                <span className="truncate">{a.name}</span>
-                <span className="ml-auto flex items-center gap-1.5">
-                  {a.pinned ? <span className="text-[10px] text-muted-foreground">置顶</span> : null}
-                  <StatusDot status={a.status} />
-                </span>
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
+        <div id="workbench-agent" className="flex min-w-0 items-center gap-2.5" title={agent.name}>
+          <AgentLogo agentId={agent.id} short={agent.short} size="lg" />
+          <span className="truncate text-[17px] font-semibold leading-tight">{agent.name}</span>
+        </div>
         <StatusBadge id="status-badge" status={agent.status} />
         <div className="ml-auto flex shrink-0 items-center gap-1.5" id="lifecycle-bar">
           {running || stopping ? (
@@ -221,6 +186,7 @@ export default function Workbench({ wb }: { wb: Workbench }) {
           rows={1}
           value={draft}
           placeholder={`向 ${agent.name} 发送消息（Enter 发送，Shift+Enter 换行）`}
+          aria-label={`向 ${agent.name} 发送消息`}
           className="min-h-[38px] flex-1 resize-none rounded-xl border border-border bg-card px-3 py-2 text-[15px] outline-none transition-all duration-150 ease-out placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onChange={(ev) => setDraft(ev.target.value)}
           onKeyDown={(ev) => {

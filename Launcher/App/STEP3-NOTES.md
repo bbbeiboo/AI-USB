@@ -783,3 +783,151 @@ CreationTime 与 `Launcher Started` 时间戳吻合（本轮 3944@21:21:48、113
 **本轮对用户 Config 文件的处理**：`Launcher/Config/user-config.json`（用户个人配置，
 模板=config/providers.example.json）与 `model-cache.json`（「拉取模型」的派生缓存，可再生）
 gitignore + 解除跟踪，磁盘内容零改动。**此为建议方案，若用户希望 user-config.json 入库请说一声，需先脱敏审查。**
+
+---
+
+## 13.12 Agent 启停 UI 接线（产品缺口 #1 关闭轮）
+
+### 13.12.1 T1 设计说明（先于代码落盘）
+
+**摸底结论（比任务书预期收窄）**：启停链路的 main/preload/服务层/类型层**全部已存在**，
+本轮唯一缺口是 renderer UI 消费端。逐层证据：
+
+| 层 | 现状 | 位置 |
+| --- | --- | --- |
+| main IPC | `agent:launch` / `agent:stop` / `agent:restart` / `agents:status` / `agent:status` / `agents:start-all` / `agents:stop-all` 已注册，全部接 pm 既有方法，带 `knownAgentId` 校验 | main.js L652-686 |
+| 状态推送 | `pm.setStatusHook((p) => broadcastStatus(p))` → `win.webContents.send('agent:status', payload)` 已接线 | main.js L1230-1233 |
+| 重同步 | `win.on('show')` → `webContents.send('agent:resync')` 已接线（托盘恢复窗口时触发） | main.js L1403 |
+| preload | `launch` / `stopAgent` / `restartAgent` / `getAgentStatuses` / `getAgentStatus` / `startAllAgents` / `stopAllAgents` / `onAgentStatus` / `onAgentResync` 已暴露 | preload.js L5-17 |
+| renderer 服务 | `startAgent` / `stopAgent` / `restartAgent` / `getAgentStatuses` / `getAgentStatus` / `onAgentStatus` / `onAgentResync` 已封装（safeInvoke 降级） | services/agent-client.ts L62-135 |
+| 类型 | `AgentRuntimeStatus` / `AgentStatusRecord` / `AgentStatusesResult` / `AgentStatusResult` / `AgentStatusEvent` / `AgentActionResult` / `StartAllResult` / `StopAllResult` + `LauncherApi` 方法签名已定义 | types/launcher.d.ts L57-110, L450-460 |
+| **UI 消费端** | **零调用**：App.tsx 无任何 startAgent/stopAgent/getAgentStatuses 调用（13.11 实测 38 个 UIA 元素无启停角色） | —— |
+
+因此本轮 **main.js / preload.js / launcher.d.ts 零改动**；任务书预期的 `ProcessControlResult`
+等类型不再重复定义（既有 `AgentActionResult` 覆盖同一语义）。
+
+**UI 需要的最小 API 面（全部复用既有，零新增 IPC 通道）**：
+
+- `startAgent(id)` → `agent:launch`（启动；pm 内部：STARTING→spawn→RUNNING，1.5s 后 start-verify 死进程纠偏）
+- `stopAgent(id)` → `agent:stop`（tree-kill / taskkill /T /F，返回 `{ ok, stopped, pid, reason? }`）
+- `getAgentStatuses()` → `agents:status`（全量对账；注意 `getAllStatuses()` 只含**被跟踪过**的记录，缺席 = 从未启动 = STOPPED）
+- `onAgentStatus(cb)` → `agent:status` 推送（pm 五态每次跃迁都会广播）
+- `onAgentResync(cb)` → `agent:resync`（窗口重新显示时全量重拉）
+
+**组件改动点**：
+
+1. 新增 `renderer/src/hooks/useAgentRuntime.ts`：状态容器 Hook。
+   - 视图模型：`AgentUiStatus = AgentRuntimeStatus | 'UNKNOWN'`（浏览器直开 / 首拉未完成）；
+     `AgentRuntimeState { status, pid, startedAt }`；`AgentActionState { busy: 'start'|'stop'|null, error }`。
+   - 挂载即 `getAgentStatuses()` 全量拉取（徽标必须与 agent-state.json 持久化态联动，
+     含 adoptSavedRecords 恢复的 RUNNING——设置弹窗「打开时才拉」的约束 7 不适用于主界面徽标）。
+   - `onAgentStatus` / `onAgentResync` **无法取消订阅**（preload 未暴露 removeListener，
+     agent-client.ts L110-119 已有书面约定）→ 模块级 `ensureSubscriptions()` 一次性守卫，
+     回调经 dispatcher 引用转发当前实例，StrictMode 双挂载也只注册一条监听。
+   - 动作（start/stop）期间 busy 锁按钮；完成后全量 `refresh()` 对账一次（补推送与 invoke 结果之间的窗口期）。
+2. 新增 `renderer/src/components/agents/AgentControlStrip.tsx`：顶栏下方 4 张迷你卡片
+   （名称 + 状态徽标 + PID + 启动/停止按钮 + 动作错误行），错误走行内可读文案，不用 alert。
+   AutomationId 命名：`agent-strip` / `agent-card-<id>` / `agent-badge-<id>` /
+   `agent-ctrl-start-<id>` / `agent-ctrl-stop-<id>` / `agent-err-<id>`。
+   徽标映射：RUNNING 运行中(绿) / STARTING 启动中(黄) / STOPPING 停止中(黄) /
+   STOPPED 已停止(灰) / ERROR 异常(红) / UNKNOWN 未知(灰)。按钮可用矩阵：
+   RUNNING/STARTING → 只可停止；STOPPED/ERROR/UNKNOWN → 只可启动；STOPPING → 停止中(禁用)。
+3. `App.tsx`：header 与消息区之间挂载 `<AgentControlStrip />`（shrink-0，不挤压滚动语义）。
+
+**Agent 名单来源**：复用 mock-data `AGENTS`（id 与 agents.json 完全一致：
+openclaw/hermes/codex/claude-code），与 AgentSelector 同源，不引第二份名单。
+
+**开源参考（只读，零拷贝，零新依赖）**：VS Code `src/vs/base/node/ps.ts`（MIT，文件头可查）。
+取其进程展示层级思路——友好名（name）为主属性、PID 作次级元数据、命令行不上 UI
+（findName 从命令行推导展示名的做法确认了"命令行属于诊断层而非展示层"）。
+未复制任何代码；进程树枚举/查杀不需要参考（pm 层 tree-kill 已实测）。
+无依赖申报：本轮零 npm install。
+
+**验收计划**：四闸门 + asar 检索 + 真实 exe UIA（按钮可达 / hermes 启停闭环 / B2 托盘退出回归 /
+终态哈希）+ vite preview 浏览器降级。结果待补于 13.12.3。
+
+### 13.12.2 实现记录（改动清单）
+
+| 文件 | 改动 | 说明 |
+| --- | --- | --- |
+| `renderer/src/hooks/useAgentRuntime.ts` | **新增** | 状态容器：挂载即全量拉取 + 推送订阅（模块级一次性守卫，见 agent-client.ts 不可退订约定）+ resync 重拉 + start/stop 的 busy/error 状态 |
+| `renderer/src/components/agents/AgentControlStrip.tsx` | **新增** | 4 卡控制条：名称 + 徽标 + PID + 启动/停止 + 行内错误；AutomationId `agent-card-<id>` / `agent-badge-<id>` / `agent-ctrl-start-<id>` / `agent-ctrl-stop-<id>` / `agent-err-<id>` |
+| `renderer/src/App.tsx` | +13 行 | header 与消息区之间挂载 `<AgentControlStrip />`（挂载即拉状态是徽标联动要求，不影响设置弹窗约束 7） |
+| `renderer/src/services/usage-client.ts`、`UsagePanel.tsx` | 顺手修 | 4.2 遗留的 3 个 tsc 错误（`reason` → `error`，对齐主进程 usage:* 返回字段）——此前 vite 不做类型检查所以漏网 |
+| `main.js` / `preload.js` / `launcher.d.ts` | **零改动** | 启停 IPC / preload 方法 / 类型全部已存在（13.12.1 摸底结论），红线 3「不重构 pm 核心」同时满足：本轮未触碰 agent-process-manager.js |
+| `.gitignore` | 1 行修正 | `agents/` → `/agents/`（根锚定）——裸写法在 Windows `core.ignoreCase=true` 下会静默忽略仓库内任意 agents 目录，本次 `components/agents/` 就中招，差点漏提交 |
+
+### 13.12.3 验收结果
+
+**四闸门（窄视口修复后重打包终验）**：
+1. 语法 `node --check`：**24/24**（Launcher/App/*.js + src/core/**/*.js 含 adapters）
+2. 单测（根 `tests/`，`node --test`）：**36 pass / 0 fail**；Launcher/App 自己的 tests 目录为空（0 条，历来如此）；
+   本轮无新增可单测的零依赖 JS 模块（renderer TS 不在 node --test 覆盖面）——数字如实，无硬凑
+3. selftest（`win-unpacked\AI-Agent.exe --selftest`）：**4/4 READY，ExitCode=0**，hermes `·` 无乱码（B1 修复健在）
+4. electron-builder --win portable：**EXIT=0**，无 ⨯ 级警告（3 条历轮既有 informational：author 未填/默认图标/ajv 重复引用）
+
+**asar 检索**（win-unpacked/resources/app.asar）：`agent-ctrl-start-` / `agent-ctrl-stop-` /
+`agent-badge-` / `agent-card-` / `agent-strip-error` / `min-w-[200px]`（修复标记）/
+`index-ClRR4VOx`（新 bundle 哈希）全部命中。
+
+**真实 exe UIA 实测**（归属：Win32_Process 主进程 CreationTime 与日志 Launcher Started 精确吻合，4 次启动均验证）：
+- a) 两遍枚举 **55 元素**（13.11 时 38 → +17）：`agent-strip` + 4 卡（名称/徽标文本/PID 行/启动按钮）全部可达 —— **清单第 2 条关闭**
+- b) hermes 闭环：点启动 → 日志 `[pm] start` + `start-verify alive=true` → 徽标「运行中」+PID（截图
+  `browser-screenshots/13.12-real-exe-hermes-running.png`）→ 点停止 → `[pm] stopped=1` → hermes.exe 残留 **0** →
+  徽标「已停止」（截图 `13.12-real-exe-hermes-stopped.png`）—— **清单第 3 条关闭**
+  - 额外：Claude Code 启动即退（已知 TUI 约束）→「异常」红标 + 行内文案「进程异常退出，可尝试重新启动」被真实触发并截图
+    （`13.12-real-exe-error-path-claudecode.png`）——失败态设计获得生产验证，无 alert
+- c) B2 实战回归：hermes RUNNING 态 → 托盘右键 UIA 不可达（上轮已证，未浪费重试）→ 按归属规则 `Stop-Process` 自己的实例 →
+  agent-state.json 含 hermes 记录（persist 启动即写盘）→ 重启 → adopt 恢复 → 徽标「运行中」+PID 与落盘记录一致
+  **且进程真实存活（无幽灵 RUNNING）** → UI 停止 → `stopped=1` → agent-state.json 回 `{"agents": {}}`（与基线字节级一致）
+- d) 终态哈希：见 13.12.4
+- 浏览器降级（vite preview，内置浏览器 1280×720，截图 `13.12-browser-degraded.png`）：条级错误
+  「Agent 状态读取失败：IPC 不可用（preload.js 未加载）…」+ 4 卡「未知」徽标，无白屏；点启动 → 卡内行内错误
+  「IPC 不可用（preload.js 未加载）」，无 alert
+  - 【额外收获】首次点击即暴露窄视口缺陷：4 卡 `flex-1 min-w-0` 被压窄后内容外溢、相邻卡片互相遮盖
+    （Playwright actionability 检出 hermes 按钮被 claude-code 卡覆盖）→ 改 `flex-wrap` + `min-w-[200px]` →
+    重构建重打包重验四闸门 + asar
+
+### 13.12.4 终态哈希（逐文件，基线 21:55 → 终态 22:16）
+
+| 文件 | 基线 SHA256（前 16 位） | 终态 | 结论 |
+| --- | --- | --- | --- |
+| Launcher/Config/user-config.json | 1b0d1012055c527b | 同 | ✓ |
+| Launcher/Config/model-cache.json | 784729643028c1e9 | 同 | ✓ |
+| Launcher/Config/pricing.json | 42a8bf4ba1f84710 | 同 | ✓ |
+| Launcher/Config/provider-presets.json | 9b312eddadb362f5 | 同 | ✓ |
+| config/providers.json | 5f44351ae38e7504 | 同 | ✓（密钥零接触） |
+| config/providers.example.json | f0891c5e1a6822ae | 同 | ✓ |
+| Build/Config/agents.json | fe0c37ee07519776 | 同 | ✓ |
+| Agents/Hermes/config.yaml**.bak** | 08a1425223f7bb70 | 同 | ✓ |
+| Launcher/Data/agent-state.json | b7adf94ebd91fc22 | 同 | ✓（`{"agents": {}}` 字节级还原） |
+| Launcher/Data/app.db | cc5773446831827d | 同 | ✓ |
+| Launcher/Data/secrets/openclaw.bin | 5125efdb9a73634b | 同 | ✓（只取哈希，未读内容） |
+| Launcher/Data/secrets/hermes.bin | fc2f965d9f604752 | 同 | ✓ |
+| Launcher/Data/secrets/codex.bin | f6382c5eeb9661af | 同 | ✓ |
+| Launcher/Data/usage/usage.jsonl | 8c2d8650c7b1badf | 同 | ✓ |
+| **Agents/Hermes/config.yaml** | 79646170c30def0d | **6d767fab03a3634d** | ✗ 唯一净写入（见 13.12.5-2） |
+| （未入基线）Agents/Codex/config.toml | —— | mtime 22:00 | 基线遗漏，见 13.12.5-2 |
+| launcher.log | 73383 字节 | 78760+ 字节 | 1 selftest + 5 启动 + 3 停止 + 用户交互，按先例只解释不还原 |
+
+### 13.12.5 本轮发现（如实披露）
+
+1. **用户实时协同测试**：实测中途用户在真机上亲自点按了 openclaw/codex/claude-code 的启停、并手关了
+   hermes/codex 控制台窗（日志原文 "window closed by user"）——新 UI 的首次真人试用顺利；pm 的惰性存活
+   复查正确处理了手关窗口（徽标经下次状态读取回落为「已停止」），未产生幽灵状态。
+2. **净写入披露**：`Agents/Hermes/config.yaml`（123KB）被 hermes 启动路径的 `syncHermesModelConfig` 重写
+   （本轮 3 次启动），哈希变化如上表；核验托管块四行 `default/provider/base_url/key_env` ==
+   用户 user-config 值（poolside/laguna-s-2.1:free @ openrouter，provider custom），功能等价、无重复块。
+   **无法字节级还原**：git 不跟踪 Agents/、无测试前备份（.bak 是 9/23 的原始版）。留置内容 == 用户下次
+   启动的确定性产物，无功能影响。`Agents/Codex/config.toml` 同被启动路径重写但**未纳入基线**——本轮基线
+   设计失误（只覆盖了 Launcher 托管存储，漏了 agent 配置同步目标），如实记录。
+3. **UIA 显示层怪癖（非缺陷）**：nbsp 被读作 '?'、「停止」偶读为乱码截断（'ֹͣ' 类）——aid 命中与功能均正常，
+   与 13.11 的 '·'→'?' 同类显示层差异。
+4. **.gitignore 误伤修复**：`agents/` 裸模式 + `core.ignoreCase=true` 会静默忽略仓库内任意 agents 目录，
+   本次 `components/agents/` 中招（git status 不显示、add 不进）——已根锚定为 `/agents/`，运行时 `Agents/`
+   仍被正确忽略（check-ignore 双向验证）。
+5. **开源参考结算**：仅只读研读 VS Code `src/vs/base/node/ps.ts`（MIT，文件头可查），取「友好名为主、
+   PID 次级元数据、命令行不上 UI」的展示层级思路；未复制任何代码；**零新依赖**（无 npm install），
+   无依赖申报项。进程树枚举/查杀未参考外部实现（pm 层 tree-kill 已实测在案）。
+6. **清单状态**：13.6 第 **2/3 条随本轮关闭**（b 项证据）；**第 1 条（登录接线）仍开放**（auth 5 通道已注册
+   未消费，下一轮单独做）。OpenClaw 配对仍需用户人工完成。

@@ -17,10 +17,10 @@ export function getUsageDashboard(days: number): Promise<UsageDashboardResult> {
 
 /** 导出用量明细：主进程写盘后调 shell.showItemInFolder */
 export function exportUsage(format: 'csv' | 'json'): Promise<UsageExportResult> {
-  return safeInvoke('exportUsage', () => ipc.usageExport(format), { ok: false, reason: NO_IPC })
+  return safeInvoke('exportUsage', () => ipc.usageExport(format), { ok: false, error: NO_IPC })
 }
 
 /** 清空全部用量记录（不可恢复，UI 侧必须二次确认后才调用） */
-export function clearUsage(): Promise<{ ok: boolean; reason?: string }> {
-  return safeInvoke('clearUsage', () => ipc.usageClear(), { ok: false, reason: NO_IPC })
+export function clearUsage(): Promise<{ ok: boolean; error?: string }> {
+  return safeInvoke('clearUsage', () => ipc.usageClear(), { ok: false, error: NO_IPC })
 }

@@ -13,6 +13,7 @@ import NewChatButton from '@/components/sidebar/NewChatButton'
 import AgentSelector from '@/components/topbar/AgentSelector'
 import ModelSelector from '@/components/topbar/ModelSelector'
 import SettingsButton from '@/components/topbar/SettingsButton'
+import AgentControlStrip from '@/components/agents/AgentControlStrip'
 import MessageList from '@/components/chat/MessageList'
 import ChatInput from '@/components/chat/ChatInput'
 import SettingsModal from '@/components/settings/SettingsModal'
@@ -124,6 +125,15 @@ export default function App() {
             <SettingsButton onClick={() => setSettingsOpen(true)} />
           </div>
         </header>
+
+        {/*
+          ===== Agent 控制条（13.12 接线） =====
+          顶栏下方四张迷你卡片：状态徽标 + 启动/停止按钮，接既有 agent:launch /
+          agent:stop / agents:status 通道。挂载即拉一次状态，让徽标与
+          agent-state.json 持久化态（含 adopt 恢复）联动——这是徽标联动的要求，
+          不影响设置弹窗「打开时才拉数据」的约束 7（那只约束弹窗自己的数据）。
+        */}
+        <AgentControlStrip />
 
         {/* flex-1 + min-h-0：让内部 MessageList 的 overflow-y-auto 真正生效 */}
         <section className="min-h-0 flex-1 bg-background">

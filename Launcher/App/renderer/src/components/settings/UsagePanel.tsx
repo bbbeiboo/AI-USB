@@ -34,7 +34,7 @@ export default function UsagePanel() {
   async function onExport(format: 'csv' | 'json') {
     const r = await exportUsage(format)
     setNotice(
-      r.ok ? `已导出 ${fmt(r.count)} 条记录并打开所在文件夹（${format.toUpperCase()}）` : r.reason || r.error || '导出失败',
+      r.ok ? `已导出 ${fmt(r.count)} 条记录并打开所在文件夹（${format.toUpperCase()}）` : r.error || '导出失败',
     )
   }
 
@@ -45,7 +45,7 @@ export default function UsagePanel() {
     }
     setConfirmingClear(false)
     const r = await clearUsage()
-    setNotice(r.ok ? '用量记录已清空' : r.reason || '清空失败')
+    setNotice(r.ok ? '用量记录已清空' : r.error || '清空失败')
     if (r.ok) void load(days)
   }
 

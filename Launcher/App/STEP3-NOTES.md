@@ -635,7 +635,7 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
    差值恰 8 小时且与 mtime 自洽。对时间轴时**勿再误判成"日志没写"**。
    —— 顺带把 12.8.3 的 claude-code 版本串乱码精确化到字节级：该段原始字节含 `EF BF BD`×4
    （U+FFFD 的 UTF-8 编码），说明**损坏发生在写入文件之前**（子进程 stdout 按 GBK 输出、父进程按 UTF-8 解码），
-   与读取方式、文件编码均无关；属既有显示层问题，`status` 判定不受影响（待后续专项根修）。
+   与读取方式、文件编码均无关。**已于 B1 专项根修（见 13.7）**。
 4. **点关闭按钮 = 隐藏进托盘，进程不退出**（`main.js` close→hide 设计）：验证收尾必须强制结束进程，
    否则会留下 4 个常驻进程污染下一轮观测。
 
@@ -662,3 +662,22 @@ PowerShell 5.1 的 `Get-Content` 以系统 ANSI（中文机器=GBK）解码 UTF-
 10. 托盘：图标存在、菜单可恢复窗口；点关闭按钮 → 窗口隐藏进托盘、进程仍在（按设计）。
 11. **真实 `AI-Agent.exe` 窗口内点开设置弹窗，观察表单出现并可保存/重开** —— `browser_*` 工具无法附加 Electron 窗口，**「未实点，需用户手动确认」**。
 
+
+### 13.7 B1 根修记录：selftest 版本串 GBK/UTF-8 混流乱码（2026-10-03）
+
+**根因（两层）**：
+1. `probeVersion`（Launcher/App/main.js）按 `encoding:'utf8'` 解码 PowerShell 5.1 子进程输出，
+   而 PS 5.1 向重定向管道输出用系统 ANSI（GBK）→ 中文路径变 U+FFFD（写盘即 EF BF BD）。
+2. 单流改 GBK 解码也不行：check 脚本输出是**混流编码**——PS 自身字符串 GBK（`桌面`=d7c0c3e6）
+   + 内部 Agent exe 透传的 UTF-8（hermes 的 `·`=c2b7），任一单一解码都会毁掉另一半
+   （实测 GBK 兜底会把 hermes 的 `·` 变成 `路`）。
+
+**修法（统一子进程输出编码，零新依赖）**：
+- 调用侧改为 `-Command` 包装：先设 `[Console]::OutputEncoding=UTF8` 再 `& '脚本' --version`，
+  使整条输出流统一为 UTF-8（含 PS 自身字符串与 exe 透传字节）。
+- 父进程 `decodeConsoleOutput()`：Buffer 捕获 → 严格 UTF-8（fatal）→ GBK 兜底，
+  仅作非 PS 子进程（直接输出 GBK 的 CLI）的保险。旧架构 `runCommand`（src/core/process-manager.js）同款修复。
+
+**验收**：重建 asar 后 `win-unpacked/AI-Agent.exe --selftest` → 4/4 READY、ExitCode=0、stderr 空；
+claude-code = `E:\桌面\AI Agent 母盘`（正确）、hermes `·` 保持正确（无回归）、
+原始输出字节 `U+FFFD` 计数 = **0**；单测 36/36、语法 8/8、构建零警告。

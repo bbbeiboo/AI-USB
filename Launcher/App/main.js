@@ -491,6 +491,21 @@ function terminalCommand(scriptAbs) {
 }
 
 // --- Probe (read-only) -------------------------------------------------------
+// 控制台输出解码：优先按严格 UTF-8；字节流不是合法 UTF-8 时回退 GBK。
+// 背景：PowerShell 5.1 向重定向管道输出用系统 ANSI 代码页（中文机器 = GBK），
+// 按 utf8 解码会把中文路径（如 "E:\桌面\AI Agent 母盘"）撕成 U+FFFD（写入文件即 EF BF BD）。
+// TextDecoder('gbk') 是 Node 内置（full-icu），无需新增依赖。
+function decodeConsoleOutput(buf) {
+  if (!buf) return '';
+  if (typeof buf === 'string') return buf;
+  if (buf.length === 0) return '';
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('gbk').decode(buf);
+  }
+}
+
 function probeVersion(agent) {
   return new Promise((resolve) => {
     let scriptAbs;
@@ -499,11 +514,18 @@ function probeVersion(agent) {
     if (!fs.existsSync(scriptAbs)) return resolve({ status: 'NOT FOUND', version: '' });
     const verArgs = agent.versionArgs || ['--version'];
     const file = 'powershell.exe';
-    const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptAbs, ...verArgs];
+    // 统一子进程输出编码为 UTF-8：PS 5.1 向重定向管道输出默认用系统 ANSI（GBK），
+    // 而其内部调用的 Agent exe 透传 UTF-8 字节，同一管道混流两种编码——
+    // 父进程无论按哪种解码都会毁掉另一半（claude-code 中文路径变 U+FFFD / hermes 的 · 变 路）。
+    // 因此用 -Command 包装：先设 [Console]::OutputEncoding=UTF8 再调脚本，让整条流统一为 UTF-8；
+    // decodeConsoleOutput 的 GBK 兜底仅作非 PS 子进程的保险。
+    const scriptArg = scriptAbs.replace(/'/g, "''");
+    const cmd = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; & '${scriptArg}' ${verArgs.join(' ')}`;
+    const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', cmd];
     try {
-      const child = execFile(file, args, { cwd: ROOT, timeout: 12000, windowsHide: true, maxBuffer: 1 << 20, encoding: 'utf8' },
+      const child = execFile(file, args, { cwd: ROOT, timeout: 12000, windowsHide: true, maxBuffer: 1 << 20, encoding: 'buffer' },
         (err, stdout) => {
-          const out = String(stdout || '');
+          const out = decodeConsoleOutput(stdout);
           if (err && !out) return resolve({ status: 'ERROR', version: '', error: safe(err) });
           const lines = out.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
           const verLine = lines.find(l => !/^\[/.test(l) && /\d+\.\d+[\.\d]*/.test(l)) || (lines[0] || '');

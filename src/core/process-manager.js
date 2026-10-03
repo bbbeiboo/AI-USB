@@ -151,16 +151,39 @@ export async function terminateTree(pid) {
   return true;
 }
 
+/**
+ * 控制台输出解码：优先按严格 UTF-8；字节流不是合法 UTF-8 时回退 GBK。
+ * 背景：PowerShell 5.1 / cmd 向重定向管道输出用系统 ANSI 代码页（中文机器 = GBK），
+ * 按 utf8 解码会把中文路径撕成 U+FFFD（再写盘即 EF BF BD）。
+ * TextDecoder('gbk') 为 Node 内置（full-icu），零新依赖。
+ */
+export function decodeConsoleOutput(buf) {
+  if (!buf) return '';
+  if (typeof buf === 'string') return buf;
+  if (buf.length === 0) return '';
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder('gbk').decode(buf);
+  }
+}
+
 /** 运行一次性命令并返回 stdout（用于版本探测 / CLI 探测）。 */
 export async function runCommand(command, args = [], { timeout = 15000 } = {}) {
   try {
+    // 以 Buffer 捕获、由 decodeConsoleOutput 决定编码（utf8 严格校验 → GBK 兜底）
     const { stdout, stderr } = await execFileAsync(command, args, {
       timeout,
       windowsHide: true,
-      encoding: 'utf8',
+      encoding: 'buffer',
     });
-    return { ok: true, stdout: stdout.trim(), stderr: stderr.trim() };
+    return { ok: true, stdout: decodeConsoleOutput(stdout).trim(), stderr: decodeConsoleOutput(stderr).trim() };
   } catch (err) {
-    return { ok: false, error: err, stdout: err.stdout?.trim() ?? '', stderr: err.stderr?.trim() ?? '' };
+    return {
+      ok: false,
+      error: err,
+      stdout: decodeConsoleOutput(err.stdout).trim(),
+      stderr: decodeConsoleOutput(err.stderr).trim(),
+    };
   }
 }

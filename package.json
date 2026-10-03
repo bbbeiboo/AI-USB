@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "launcher": "node launcher.js",
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
     "doctor": "node launcher.js --doctor",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",

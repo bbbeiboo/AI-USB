@@ -745,3 +745,41 @@ module 作用域的 `Auth Ready` / `AuthIpc Registered`（line ~1044，**先于*
 日志 70466 → 71527 B，与两次启动 + 一次 Hidden to Tray 对齐。
 `Launcher/Config/user-config.json` / `model-cache.json` 的未提交改动是**用户 20:56 手动配置
 Hermes（含 466 个模型缓存）** 所致，与本次测试无关，留待用户处置。
+
+### 13.11 手动清单收尾实测（2026-10-03 晚，经用户授权，接续 13.10）
+
+**基线管理**：开工前全量 SHA256 基线（user-config / providers.example / Data 全部 10 文件）+
+日志字节数（71527）+ git 快照 + `user-config.json` 工作区外备份（`%TEMP%\zcode-baseline-20261003-212138`，
+哈希校验一致）。测试实例归属：`Get-CimInstance Win32_Process` 核对主进程（无 `--type=` 参数）
+CreationTime 与 `Launcher Started` 时间戳吻合（本轮 3944@21:21:48、11336@21:25:56）。
+
+**本轮结果（13.6 清单第 1/2/3/5/6/7 条）**：
+
+| 条目 | 结果 | 证据 |
+| --- | --- | --- |
+| 5 保存自定义 baseUrl → 重开仍是自定义值 | ✅ 通过 | baseUrl 改 `https://zcode-test.invalid/v1` → 保存 → 关弹窗重开回显测试值（UIA 读回）→ 日志 `ApiConfig Saved id=openclaw hasKey=kept`（密钥未触碰） |
+| 6 密钥保存后重开：掩码/徽标/清除 | 部分（见 7） | 密钥全程零接触；掩码留空 = 沿用已保存密钥、徽标「已配置（·····9b9d）」前后一致 |
+| 7 连接测试两分支反馈 | **BLOCKED** | masked 密钥清除后无法经 UI 恢复（技术约束而非功能缺陷）→ 需用户手动确认 |
+| 1/2/3 登录、Agent 启停 | **BLOCKED（产品缺口）** | 新 UI 未接线启停控件：主界面 UIA 全量 38 元素无任何启动/停止/状态角色；`agent-selector` 下拉仅 4 个切换项（OpenClaw 当前/Hermes/Codex/Claude Code）；`App.tsx` 无 `startAgent/stopAgent` 调用。pm 层启停机制已由 `p16_pm_test.cjs` 实测（PASS），缺的是 UI 接线 |
+
+**baseUrl 闭环的还原（双路径）**：UI 路径改回原值 → 重开回显 `https://openrouter.ai/api/v1` ✓；
+文件级兜底：托盘退出自动化失败（右键菜单 UIA 不可达，两次 `NO_CONTEXT_MENU`）→ 按归属规则
+`Stop-Process` 结束自己的实例 → B5 备份覆盖 `user-config.json` → 复算哈希 == 基线 ✓ →
+重启确认 UI 显示用户原配置（OpenRouter / qwen 3.8 27B / 466 缓存 / ·····9b9d）✓。
+**终态：10/10 哈希一致，测试零净写入。**
+
+**新踩的坑**：
+1. `Get-Process().CreationTime` 在本环境可能返回 null（4/4 进程同时），改用
+   `Win32_Process.CreationDate` 稳定；主进程识别 = 命令行无 `--type=`。
+2. UIA 可达性「温热」会衰减：隔一段时间再点会 `NOT_FOUND`，每次操作批前重跑一遍枚举。
+3. 托盘图标**右键**菜单对 UIA 不可达（`#32768` 未捕获，左键 Invoke 正常）→ 程序化托盘退出
+   目前做不到，只能 `Stop-Process`（仅限归属明确的自有实例）。
+4. 密钥徽标文本经 UIA 读出为 `????9b9d`（UIA 层把 `·` 转义），截图层正常——显示层差异，非数据问题。
+
+**产品缺口（建议排期）**：新 UI 无 Agent 启停/状态入口（第 1/2/3 条的根因）。
+建议 4.x 增加卡片式启停 UI 接 `startAgent/stopAgent/getAgentStatuses`（IPC 已就绪），
+并把登录层接入新 UI（auth 5 通道已注册但未消费）。
+
+**本轮对用户 Config 文件的处理**：`Launcher/Config/user-config.json`（用户个人配置，
+模板=config/providers.example.json）与 `model-cache.json`（「拉取模型」的派生缓存，可再生）
+gitignore + 解除跟踪，磁盘内容零改动。**此为建议方案，若用户希望 user-config.json 入库请说一声，需先脱敏审查。**

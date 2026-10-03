@@ -18,6 +18,10 @@ secrets*.json
 user-config.json.bak
 Launcher/Data/secrets/
 Launcher/Config/user-config.json.bak
+# 用户个人配置与派生模型缓存不入库（13.11）：user-config.json 含用户自选 provider/baseUrl/model，
+# 模板已由根 config/providers.example.json 提供；model-cache.json 可由「拉取模型」随时再生
+Launcher/Config/user-config.json
+Launcher/Config/model-cache.json
 **/*.pem
 **/*.key
 

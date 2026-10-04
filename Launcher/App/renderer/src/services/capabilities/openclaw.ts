@@ -1,0 +1,216 @@
+/**
+ * OpenClaw 能力全景与原生设置 Schema。
+ * ---------------------------------------------------------------------------
+ * 版本基线：2026.9.5（npm 包 openclaw；官方最新 2026.9.8，差异只记矩阵不改判定）。
+ * 能力依据全部为官方文档 docs.openclaw.ai / 官方仓库 github.com/openclaw/openclaw，
+ * 标注为 `文档:<路径>`；文档未逐条定位的如实标 unsupported/adapter 并写明缺口。
+ * 关键纠偏（调研代理核实）：官方配置为 JSON5 的 ~/.openclaw/openclaw.json（便携树内
+ * 经 OPENCLAW_CONFIG_PATH 指向 agents/OpenClaw/Config/），不是 yaml。
+ */
+import type { AgentCapabilities, AgentSettingsField } from '../agent-capability-types.ts'
+
+export const OPENCLAW_VERSION = '2026.9.5'
+
+const DOC = '文档:docs.openclaw.ai'
+
+export const OPENCLAW_CAPABILITIES: AgentCapabilities = {
+  agentId: 'openclaw',
+  version: OPENCLAW_VERSION,
+  repoUrl: 'https://github.com/openclaw/openclaw',
+  docsUrl: 'https://docs.openclaw.ai',
+  groups: {
+    agent: [
+      { id: 'agent.info', supported: 'native', description: 'openclaw status / health / doctor CLI', source: `${DOC}/cli` },
+      { id: 'agent.health', supported: 'native', description: 'health 命令 + gateway health/probe', source: `${DOC}/cli` },
+      { id: 'agent.update', supported: 'native', description: 'openclaw update（按安装方式走 npm/git 等，自带 wizard）', source: `${DOC}/cli/update` },
+      { id: 'agent.restart', supported: 'native', description: 'gateway/daemon/fleet restart 子命令', source: `${DOC}/cli` },
+      { id: 'agent.stop', supported: 'native', description: 'gateway stop / daemon stop', source: `${DOC}/cli` },
+    ],
+    model: [
+      { id: 'model.providers', supported: 'native', description: 'models list/scan 多提供方', source: `${DOC}/concepts/models` },
+      { id: 'model.models', supported: 'native', description: 'models status/list', source: `${DOC}/concepts/models` },
+      { id: 'model.switch', supported: 'native', description: '/model <ref>（会话/agent/全局作用域）+ models set', source: `${DOC}/concepts/models` },
+      { id: 'model.test', supported: 'adapter', description: '官方无独立连通性测试命令；聚合器 testProvider 实现', source: `${DOC}/cli（无 test 子命令）` },
+      { id: 'model.fallback', supported: 'native', description: 'fallbacks 链（agents.defaults.model.fallbacks，按序尝试）', source: `${DOC}/concepts/models` },
+      { id: 'model.reasoning', supported: 'native', description: '/think thinking 级别控制', source: `${DOC}/concepts/models` },
+      { id: 'model.fast_mode', supported: 'unsupported', description: '文档未定位独立 fast mode 语义', source: `${DOC}/concepts/models（无对应键）` },
+      { id: 'model.verbosity', supported: 'unsupported', description: '文档未定位 verbosity 键', source: `${DOC}/concepts/models（无对应键）` },
+    ],
+    auxiliary: [
+      { id: 'auxiliary.vision', supported: 'native', description: 'agents.defaults.imageModel + mediaModels', source: `${DOC}/concepts/models` },
+      { id: 'auxiliary.compression', supported: 'unsupported', description: '文档未定位按用途的压缩小模型键', source: `${DOC}/concepts/models（无对应键）` },
+      { id: 'auxiliary.title', supported: 'native', description: 'utilityModel 负责会话/话题标题', source: `${DOC}/concepts/models` },
+      { id: 'auxiliary.review', supported: 'unsupported', description: '文档未定位独立评审辅助模型', source: `${DOC}/concepts/models（无对应键）` },
+      { id: 'auxiliary.approval', supported: 'native', description: 'decisionModel 负责插件决策/打分', source: `${DOC}/concepts/models` },
+      { id: 'auxiliary.skills', supported: 'native', description: 'openclaw infer 模型/媒体/embedding 工作流', source: `${DOC}/concepts/models` },
+      { id: 'auxiliary.custom', supported: 'native', description: 'utilityModel/decisionModel/imageModel/pdfModel 按用途分模型', source: `${DOC}/concepts/models` },
+    ],
+    conversation: [
+      { id: 'conversation.list', supported: 'native', description: 'openclaw sessions --json（可过滤 active）', source: `${DOC}/concepts/session` },
+      { id: 'conversation.create', supported: 'native', description: '/new（含 incognito 会话）', source: `${DOC}/concepts/session` },
+      { id: 'conversation.open', supported: 'native', description: 'Gateway RPC Session control 方法族', source: `${DOC}/gateway/protocol/rpc-methods` },
+      { id: 'conversation.rename', supported: 'adapter', description: '官方 RPC 面存在但 rename 方法名未逐条确认；聚合器经 Gateway RPC 实现', source: '文档注明「方法名以源码 src/gateway/server-methods 为准」' },
+      { id: 'conversation.archive', supported: 'native', description: 'session.maintenance 自动归档（pruneAfter）', source: `${DOC}/concepts/session` },
+      { id: 'conversation.restore', supported: 'adapter', description: '归档恢复由聚合器维护清单实现', source: '聚合器 13.18/13.20 归档接口' },
+      { id: 'conversation.delete', supported: 'native', description: 'sessions cleanup --enforce', source: `${DOC}/concepts/session` },
+      { id: 'conversation.export', supported: 'native', description: 'openclaw transcripts 转录导出', source: `${DOC}/cli` },
+    ],
+    generation: [
+      { id: 'generation.send', supported: 'native', description: 'chat.send（RPC）/ message send / openclaw agent', source: `${DOC}/cli` },
+      { id: 'generation.stream', supported: 'native', description: 'Gateway 推 text_delta 事件（渠道侧为块流+预览编辑）', source: `${DOC}/concepts/streaming` },
+      { id: 'generation.stop', supported: 'native', description: '/stop 聊天终止', source: `${DOC}/cli` },
+      { id: 'generation.resume', supported: 'native', description: '会话持久化 + run lifecycle RPC', source: `${DOC}/gateway/protocol/rpc-methods` },
+      { id: 'generation.retry', supported: 'adapter', description: '聊天级重试命令未明确；聚合器经 RPC 重发实现', source: `${DOC}/cli（无 retry 子命令）` },
+    ],
+    files: [
+      { id: 'files.list', supported: 'native', description: 'workspace 文件工具族', source: `${DOC}/tools/exec` },
+      { id: 'files.read', supported: 'native', description: 'workspace 读', source: `${DOC}/tools/exec` },
+      { id: 'files.write', supported: 'native', description: 'workspace 写', source: `${DOC}/tools/exec` },
+      { id: 'files.upload', supported: 'permission-required', description: '跨节点 file-transfer 插件，按方向/路径 glob/deny 规则审批', source: `${DOC}/cli/file-transfer` },
+      { id: 'files.download', supported: 'permission-required', description: '同上（read|write 方向 + standing approvals）', source: `${DOC}/cli/file-transfer` },
+      { id: 'files.delete', supported: 'native', description: 'workspace 删除', source: `${DOC}/tools/exec` },
+      { id: 'files.export', supported: 'adapter', description: '聚合器导出通道', source: '聚合器 file:export（通道表）' },
+      { id: 'files.drag_drop', supported: 'adapter', description: 'UI 层交互，落地即 upload 审批链', source: '聚合器 13.17 输入框拖拽预留' },
+    ],
+    computer: [
+      { id: 'computer.terminal', supported: 'native', description: 'exec 工具 + code-execution（五权限模式）', source: `${DOC}/tools/exec` },
+      { id: 'computer.filesystem', supported: 'native', description: 'workspace 文件工具（computer-use 动作族不含文件路径）', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.process', supported: 'native', description: 'exec 进程 + launch_app/kill_app（V2 窗口族）', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.browser', supported: 'native', description: '浏览器 CUA 动作族（target gateway/node）', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.keyboard', supported: 'permission-required', description: 'computer.act type/key 注入；Windows 为实验性 cua-computer（不支持按键保持/修饰键组合）', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.mouse', supported: 'permission-required', description: 'left_click/mouse_move/scroll/拖拽；Windows 同上实验性限制', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.screen', supported: 'permission-required', description: 'screen.snapshot 视觉循环；Windows 仅主显示器', source: `${DOC}/nodes/computer-use` },
+      { id: 'computer.window', supported: 'permission-required', description: 'list_windows/bring_to_front/set_value/invoke_menu（V2）', source: `${DOC}/nodes/computer-use` },
+    ],
+    browser: [
+      { id: 'browser.open', supported: 'native', description: '托管 Chrome/Brave/Edge/Chromium 独立 profile', source: `${DOC}/tools/browser` },
+      { id: 'browser.navigate', supported: 'native', description: 'browser navigate CLI', source: `${DOC}/tools/browser` },
+      { id: 'browser.click', supported: 'native', description: 'browser click（确定性控制）', source: `${DOC}/tools/browser` },
+      { id: 'browser.type', supported: 'native', description: 'browser type/evaluate', source: `${DOC}/tools/browser` },
+      { id: 'browser.download', supported: 'native', description: 'downloads 元数据', source: `${DOC}/tools/browser` },
+      { id: 'browser.upload', supported: 'unsupported', description: '文档未定位浏览器上传动作', source: `${DOC}/tools/browser（无对应项）` },
+      { id: 'browser.screenshot', supported: 'native', description: 'browser screenshot/snapshot/PDF', source: `${DOC}/tools/browser` },
+      { id: 'browser.tabs', supported: 'native', description: 'tabs list/open/focus/close', source: `${DOC}/tools/browser` },
+      { id: 'browser.cookies', supported: 'native', description: 'user profile 经 Chrome DevTools MCP 附加真实登录态；可导入 Chrome cookie', source: `${DOC}/tools/browser` },
+      { id: 'browser.cdp', supported: 'native', description: 'hosted CDP provider + Direct WebSocket CDP', source: `${DOC}/tools/browser` },
+    ],
+    memory: [
+      { id: 'memory.read', supported: 'native', description: 'memory_get 工具', source: `${DOC}/concepts/memory` },
+      { id: 'memory.search', supported: 'native', description: 'memory_search（向量+关键词混合检索）', source: `${DOC}/concepts/memory` },
+      { id: 'memory.write', supported: 'native', description: 'agent 直接编辑 MEMORY.md/memory/*.md/USER.md（无独立 write 工具）', source: `${DOC}/concepts/memory` },
+      { id: 'memory.delete', supported: 'native', description: '同上（编辑 Markdown 即增删）', source: `${DOC}/concepts/memory` },
+      { id: 'memory.profile', supported: 'native', description: 'USER.md 用户画像', source: `${DOC}/concepts/memory` },
+      { id: 'memory.external_provider', supported: 'native', description: 'embedding 可换 Gemini/Voyage/Ollama 等；引擎插件 Honcho/LanceDB', source: `${DOC}/concepts/memory` },
+    ],
+    skills: [
+      { id: 'skills.list', supported: 'native', description: 'skills list/search/info', source: `${DOC}/tools/skills` },
+      { id: 'skills.load', supported: 'native', description: '加载期 requires 门控（bins/env/config/os）', source: `${DOC}/tools/skills` },
+      { id: 'skills.create', supported: 'native', description: 'Skill Workshop 提案制创建', source: `${DOC}/tools/creating-skills` },
+      { id: 'skills.update', supported: 'native', description: 'workshop propose-update', source: `${DOC}/tools/creating-skills` },
+      { id: 'skills.delete', supported: 'native', description: 'workshop quarantine/apply 流程管理', source: `${DOC}/tools/creating-skills` },
+      { id: 'skills.approval', supported: 'native', description: '人工 evaluate→apply + installPolicy fail-closed + ClawHub 信任信封', source: `${DOC}/tools/skills` },
+    ],
+    mcp: [
+      { id: 'mcp.list', supported: 'native', description: 'mcp list/show/status/probe', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.add', supported: 'native', description: 'mcp add/set/configure（OAuth 支持）', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.remove', supported: 'native', description: '配置移除（mcp.servers.<name>）', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.enable', supported: 'native', description: 'configure 启停（启用侧）', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.disable', supported: 'native', description: 'configure 启停（禁用侧）', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.tools', supported: 'native', description: 'mcp tools + 客户端工具桥接', source: `${DOC}/cli/mcp` },
+      { id: 'mcp.resources', supported: 'unsupported', description: '文档仅明确 tools 与 mcp serve 桥接，resources/prompts 未逐条定位', source: `${DOC}/cli/mcp（无对应段）` },
+      { id: 'mcp.prompts', supported: 'unsupported', description: '官方文档仅明确 tools 与 serve 桥接，prompts 未逐条定位', source: `${DOC}/cli/mcp（无对应段）` },
+    ],
+    delegation: [
+      { id: 'delegation.supported', supported: 'native', description: 'subagents 工具族', source: `${DOC}/tools/subagents` },
+      { id: 'delegation.spawn', supported: 'native', description: 'sessions_spawn（独立子会话 agent:<id>:subagent:<uuid>）', source: `${DOC}/tools/subagents` },
+      { id: 'delegation.parallel', supported: 'native', description: '官方定位即并行研究/长任务', source: `${DOC}/tools/subagents` },
+      { id: 'delegation.max_children', supported: 'native', description: 'per-agent spawn limit', source: `${DOC}/tools/subagents` },
+      { id: 'delegation.max_depth', supported: 'native', description: 'orchestrator 模式按深度 tool policy', source: `${DOC}/tools/subagents` },
+      { id: 'delegation.orchestrator', supported: 'native', description: 'orchestrator 模式 + sessions_yield 交接', source: `${DOC}/concepts/subagent-yield-handoff` },
+      { id: 'delegation.worktree', supported: 'unsupported', description: '文档未定位 git worktree 隔离', source: `${DOC}/tools/subagents（无对应项）` },
+    ],
+    security: [
+      { id: 'security.permissions', supported: 'native', description: 'exec 五权限模式 deny/allowlist/ask/auto/full', source: `${DOC}/tools/permission-modes` },
+      { id: 'security.approval', supported: 'native', description: 'approvals get + 渠道 DM pairing/allowlist', source: `${DOC}/gateway/security` },
+      { id: 'security.smart_approval', supported: 'native', description: 'auto 模式内建 AI 审阅者（三次拒绝升级人工）', source: `${DOC}/tools/permission-modes` },
+      { id: 'security.deny_rules', supported: 'native', description: 'allowlist/deny glob + 渠道双层 allowlist', source: `${DOC}/tools/permission-modes` },
+      { id: 'security.secret_redaction', supported: 'native', description: 'secrets 命令族 + secret scanning + 日志脱敏', source: `${DOC}/gateway/secrets` },
+      { id: 'security.pii_redaction', supported: 'unsupported', description: '文档未定位 PII 专项脱敏', source: `${DOC}/gateway/secrets（无对应段）` },
+      { id: 'security.website_blocklist', supported: 'unsupported', description: '文档未定位网站黑名单键', source: `${DOC}/gateway/security（无对应段）` },
+    ],
+    voice: [
+      { id: 'voice.input', supported: 'native', description: 'Talk 模式（stt-tts）+ 语音唤醒', source: `${DOC}/nodes/talk` },
+      { id: 'voice.output', supported: 'native', description: 'TTS 出站语音消息 + [[tts:...]] 指令', source: `${DOC}/tools/tts` },
+      { id: 'voice.stt', supported: 'native', description: 'Talk 转录 + openclaw infer transcribe（provider 清单文档未列全）', source: `${DOC}/nodes/talk` },
+      { id: 'voice.tts', supported: 'native', description: 'ElevenLabs/Azure/OpenAI/edge-tts/本地 speech-core 等', source: `${DOC}/tools/tts` },
+      { id: 'voice.vad', supported: 'unsupported', description: '文档未定位独立 VAD 键（voicewake 为唤醒词非 VAD）', source: `${DOC}/nodes/voicewake` },
+      { id: 'voice.streaming', supported: 'native', description: 'Talk 流式对话 + 块流', source: `${DOC}/nodes/talk` },
+    ],
+    streaming: [
+      { id: 'streaming.chat', supported: 'native', description: 'UI 客户端真流（text_delta）', source: `${DOC}/concepts/streaming` },
+      { id: 'streaming.gateway', supported: 'native', description: 'Gateway 事件推送', source: `${DOC}/concepts/streaming` },
+      { id: 'streaming.events', supported: 'native', description: 'EmbeddedBlockChunker 块流（渠道侧无 token-delta，官方明示）', source: `${DOC}/concepts/streaming` },
+    ],
+    gateway: [
+      { id: 'gateway.gateway', supported: 'native', description: 'Gateway 为核心组件（WebSocket RPC 控制面）', source: `${DOC}/gateway/protocol/rpc-methods` },
+      { id: 'gateway.telegram', supported: 'native', description: 'bundled 渠道', source: `${DOC}/channels` },
+      { id: 'gateway.discord', supported: 'native', description: '官方插件 @openclaw/discord', source: `${DOC}/channels` },
+      { id: 'gateway.slack', supported: 'native', description: '官方插件 @openclaw/slack', source: `${DOC}/channels` },
+      { id: 'gateway.whatsapp', supported: 'native', description: '官方插件 @openclaw/whatsapp', source: `${DOC}/channels` },
+    ],
+    task: [
+      { id: 'task.create', supported: 'native', description: 'cron add / tasks CLI', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.list', supported: 'native', description: 'cron list / tasks', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.status', supported: 'native', description: 'cron status/runs', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.cancel', supported: 'native', description: 'cron rm/disable', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.pause', supported: 'native', description: 'cron disable', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.resume', supported: 'native', description: 'cron enable', source: `${DOC}/automation/cron-jobs` },
+      { id: 'task.queue', supported: 'native', description: 'command/steering 队列子系统（源码级子系统，文档未逐页核实）', source: `${DOC}/automation/hooks（推断条目）` },
+      { id: 'task.events', supported: 'native', description: 'automation hooks（事件 hooks）', source: `${DOC}/automation/hooks` },
+    ],
+    transfer: [
+      { id: 'transfer.receive', supported: 'native', description: '官方三入口：inbound webhooks（/hooks/agent 提交 turn，可等完成）/ A2A 渠道 / Gateway RPC', source: `${DOC}/automation/cron-jobs/webhooks` },
+      { id: 'transfer.send', supported: 'native', description: 'message broadcast + A2A 出站', source: `${DOC}/channels/a2a` },
+      { id: 'transfer.file', supported: 'permission-required', description: 'file-transfer 插件审批链', source: `${DOC}/cli/file-transfer` },
+      { id: 'transfer.conversation', supported: 'native', description: 'MCP serve 桥接 conversations_list/messages_read/attachments_fetch', source: `${DOC}/cli/mcp` },
+      { id: 'transfer.task', supported: 'native', description: '/hooks/agent 指定 model/thinking/幂等键提交任务', source: `${DOC}/automation/cron-jobs/webhooks` },
+      { id: 'transfer.queue', supported: 'adapter', description: '聚合器队列状态机', source: '聚合器 listQueue' },
+      { id: 'transfer.recommendation', supported: 'adapter', description: '推荐由聚合器按能力矩阵生成', source: '聚合器 getRecommendation（13.20 能力感知）' },
+    ],
+    settings: [
+      { id: 'settings.get', supported: 'native', description: 'config get / Config RPC / Control UI', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.set', supported: 'native', description: 'config set/patch（热加载 + 严格校验）', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.reset', supported: 'native', description: 'config unset', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.export', supported: 'native', description: 'config file 打印实际配置（JSON5）', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.import', supported: 'adapter', description: '聚合器经 config patch 批量导入', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.schema', supported: 'native', description: 'config schema 输出规范 JSON Schema', source: `${DOC}/gateway/configuration` },
+      { id: 'settings.reload', supported: 'native', description: 'Gateway 监听配置文件自动热加载（非法变更跳过）', source: `${DOC}/gateway/configuration` },
+    ],
+    update: [
+      { id: 'update.check', supported: 'native', description: 'update status（--json 含 lastRun 报告）', source: `${DOC}/cli/update` },
+      { id: 'update.download', supported: 'native', description: 'update --dry-run 预演 + 私密暂存', source: `${DOC}/cli/update` },
+      { id: 'update.install', supported: 'native', description: 'openclaw update + wizard + 默认重启 Gateway', source: `${DOC}/cli/update` },
+      { id: 'update.rollback', supported: 'native', description: 'verified rollback / update recover --root（降级需 --yes）', source: `${DOC}/cli/update/repair-and-recovery` },
+    ],
+  },
+}
+
+/** OpenClaw 原生设置 Schema（TS 面）——config key 以官方文档 concepts/models 等页为准 */
+export const OPENCLAW_SETTINGS_SCHEMA: AgentSettingsField[] = [
+  { key: 'agents.defaults.model', uiName: '主模型', type: 'string', description: '默认模型引用（provider/model）', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'models', status: 'implemented', capability: 'model.switch', source: `${DOC}/concepts/models` },
+  { key: 'agents.defaults.model.fallbacks', uiName: '回退链', type: 'list', description: '按序尝试的回退模型（手动 /model 不降级）', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'models', status: 'planned', capability: 'model.fallback', source: `${DOC}/concepts/models` },
+  { key: 'agents.defaults.utilityModel', uiName: '实用小模型', type: 'string', description: '标题/摘要/进度旁白', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'models', status: 'implemented', capability: 'auxiliary.title', source: `${DOC}/concepts/models` },
+  { key: 'agents.defaults.decisionModel', uiName: '决策小模型', type: 'string', description: '插件决策/打分', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'models', status: 'planned', capability: 'auxiliary.approval', source: `${DOC}/concepts/models` },
+  { key: 'agents.defaults.imageModel', uiName: '视觉模型', type: 'string', description: '图片理解模型', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'models', status: 'planned', capability: 'auxiliary.vision', source: `${DOC}/concepts/models` },
+  { key: 'memory.search.provider', uiName: '记忆检索提供方', type: 'string', description: 'embedding 后端（OpenAI/Gemini/Voyage/Ollama/本地 GGUF…）', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'memory', status: 'planned', capability: 'memory.search', source: `${DOC}/concepts/memory` },
+  { key: 'tools.exec.mode', uiName: '执行权限模式', type: 'enum', enumValues: ['deny', 'allowlist', 'ask', 'auto', 'full'], description: 'exec 权限五模式', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'security', status: 'planned', capability: 'security.permissions', source: `${DOC}/tools/permission-modes` },
+  { key: 'tts.enabled', uiName: 'TTS 开关', type: 'boolean', description: '出站语音合成', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'voice', status: 'planned', capability: 'voice.tts', source: `${DOC}/tools/tts` },
+  { key: 'tts.provider', uiName: 'TTS 提供方', type: 'string', description: '语音合成后端', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'voice', status: 'planned', capability: 'voice.tts', source: `${DOC}/tools/tts` },
+  { key: 'mcp.servers', uiName: 'MCP 服务器', type: 'list', description: 'mcp.servers.<name> 清单', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'keys', status: 'planned', capability: 'mcp.list', source: `${DOC}/cli/mcp` },
+  { key: 'skills.entries', uiName: '技能启停', type: 'object', description: 'skills.entries.<name>.enabled 白名单', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'plugins', status: 'planned', capability: 'skills.list', source: `${DOC}/tools/skills` },
+  { key: 'security.installPolicy', uiName: '安装信任策略', type: 'string', description: '技能安装 fail-closed 策略', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'security', status: 'planned', capability: 'skills.approval', source: `${DOC}/tools/skills` },
+  { key: 'session.reset', uiName: '会话重置策略', type: 'enum', enumValues: ['daily', 'idle'], description: '自动重置策略', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'chat', status: 'planned', capability: 'conversation.create', source: `${DOC}/concepts/session` },
+  { key: 'session.maintenance.pruneAfter', uiName: '自动归档阈值', type: 'string', description: '过期会话自动归档', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: false, page: 'archived', status: 'planned', capability: 'conversation.archive', source: `${DOC}/concepts/session` },
+  { key: 'gateway.bind', uiName: '网关绑定', type: 'string', description: 'Gateway 监听地址（默认 loopback）', configFile: 'openclaw.json', secret: false, runtimeChange: true, requiresRestart: true, page: 'gateway', status: 'planned', capability: 'gateway.gateway', source: `${DOC}/gateway/security` },
+  { key: 'channels.*.token', uiName: '渠道令牌', type: 'string', description: '各渠道接入令牌（值只进 secrets 存储，聚合器零接触）', configFile: 'auth-store', secret: true, runtimeChange: true, requiresRestart: false, page: 'keys', status: 'advanced/native-only', capability: 'gateway.telegram', source: `${DOC}/gateway/secrets` },
+]

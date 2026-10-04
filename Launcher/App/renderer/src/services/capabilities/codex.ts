@@ -1,0 +1,217 @@
+/**
+ * Codex（OpenAI Codex CLI）能力全景与原生设置 Schema。
+ * ---------------------------------------------------------------------------
+ * 版本基线：0.156.1（npm 包 @openai/codex；官方最新 0.160.0，差异只记矩阵不改判定）。
+ * 能力依据全部为官方文档 developers.openai.com/codex（config-reference / cli-reference /
+ * sandboxing / subagents / skills / mcp / noninteractive），标注为 `文档:<路径>`；
+ * 推断项在描述中写明「推断」。CLI 本体无浏览器/GUI/语音——这些是 Codex App/云端能力，
+ * 如实标 unsupported/adapter，不因 App 有而给 CLI 记 native。
+ */
+import type { AgentCapabilities, AgentSettingsField } from '../agent-capability-types.ts'
+
+export const CODEX_VERSION = '0.156.1'
+
+const DOC = '文档:developers.openai.com/codex'
+
+export const CODEX_CAPABILITIES: AgentCapabilities = {
+  agentId: 'codex',
+  version: CODEX_VERSION,
+  repoUrl: 'https://github.com/openai/codex',
+  docsUrl: 'https://developers.openai.com/codex',
+  groups: {
+    agent: [
+      { id: 'agent.info', supported: 'native', description: 'codex --version / codex doctor（诊断 stack/session/updates）', source: `${DOC}/cli/reference` },
+      { id: 'agent.health', supported: 'native', description: 'codex doctor', source: `${DOC}/cli/reference` },
+      { id: 'agent.update', supported: 'native', description: 'codex update 自更新 + check_for_update_on_startup', source: `${DOC}/config-reference` },
+      { id: 'agent.restart', supported: 'adapter', description: '官方无 restart 命令；聚合器进程管理器负责重启', source: 'src/core/adapters/codex.js（聚合器进程层）' },
+      { id: 'agent.stop', supported: 'adapter', description: '官方无 stop 命令（中断靠 Ctrl-C / exec 一次性进程）；聚合器停进程实现', source: `${DOC}/cli/reference（无 stop 子命令）` },
+    ],
+    model: [
+      { id: 'model.providers', supported: 'native', description: '[model_providers.*]（name/base_url/env_key/headers/重试；wire_api 仅 responses）', source: `${DOC}/config-reference` },
+      { id: 'model.models', supported: 'native', description: 'model 键 + model_catalog_json 模型目录', source: `${DOC}/config-reference` },
+      { id: 'model.switch', supported: 'native', description: '顶层 model / -m / profile / TUI /model', source: `${DOC}/config-reference` },
+      { id: 'model.test', supported: 'adapter', description: '官方无连通性测试命令；聚合器 testProvider 实现', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'model.fallback', supported: 'unsupported', description: '官方 config-reference 无 fallback 键（仅网络层 retry）', source: `${DOC}/config-reference（全键清单无此项）` },
+      { id: 'model.reasoning', supported: 'native', description: 'model_reasoning_effort（minimal/low/medium/high/none）', source: `${DOC}/config-reference` },
+      { id: 'model.fast_mode', supported: 'unsupported', description: '官方配置无 fast mode 键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'model.verbosity', supported: 'native', description: 'model_verbosity（low/medium/high）', source: `${DOC}/config-reference` },
+    ],
+    auxiliary: [
+      { id: 'auxiliary.vision', supported: 'unsupported', description: '无按用途的视觉辅助小模型键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'auxiliary.compression', supported: 'unsupported', description: '无压缩专用模型键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'auxiliary.title', supported: 'unsupported', description: '无标题生成专用模型键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'auxiliary.review', supported: 'native', description: 'review_model：/review 用独立模型', source: `${DOC}/config-reference` },
+      { id: 'auxiliary.approval', supported: 'unsupported', description: '无审批打分专用模型键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'auxiliary.skills', supported: 'unsupported', description: '无技能搜索专用模型键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'auxiliary.custom', supported: 'native', description: '[memories] extract_model/consolidation_model 按用途绑定小模型', source: `${DOC}/config-reference` },
+    ],
+    conversation: [
+      { id: 'conversation.list', supported: 'native', description: 'codex resume 无参 picker 列会话', source: `${DOC}/cli/reference` },
+      { id: 'conversation.create', supported: 'native', description: '新会话（TUI/exec）', source: `${DOC}/cli/reference` },
+      { id: 'conversation.open', supported: 'native', description: 'codex resume <SESSION_ID> / --last', source: `${DOC}/cli/reference` },
+      { id: 'conversation.rename', supported: 'adapter', description: '官方无 rename；聚合器管理会话元数据实现', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'conversation.archive', supported: 'adapter', description: '官方无 archive；聚合器归档清单实现', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'conversation.restore', supported: 'adapter', description: '官方无 archive；聚合器归档清单实现', source: '聚合器 13.18/13.20 归档接口' },
+      { id: 'conversation.delete', supported: 'adapter', description: '官方无 delete 命令；聚合器管理 rollout 文件实现', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'conversation.export', supported: 'adapter', description: '聚合器读 rollout 转录生成 md/json', source: '聚合器 exportSession' },
+    ],
+    generation: [
+      { id: 'generation.send', supported: 'native', description: 'codex exec 非交互 + TUI（官方明确脚本可用的非交互模式）', source: `${DOC}/noninteractive` },
+      { id: 'generation.stream', supported: 'native', description: 'TUI/exec 均流式', source: `${DOC}/noninteractive` },
+      { id: 'generation.stop', supported: 'adapter', description: '官方无 stop 命令；聚合器中止 exec 进程实现', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'generation.resume', supported: 'native', description: 'rollout 会话持久化 + resume', source: `${DOC}/cli/reference` },
+      { id: 'generation.retry', supported: 'native', description: 'request_max_retries / stream_max_retries', source: `${DOC}/config-reference` },
+    ],
+    files: [
+      { id: 'files.list', supported: 'native', description: '沙箱内 shell 工具列目录', source: `${DOC}/sandboxing` },
+      { id: 'files.read', supported: 'native', description: '沙箱内读（受 sandbox_mode 约束）', source: `${DOC}/sandboxing` },
+      { id: 'files.write', supported: 'permission-required', description: '写范围由 sandbox_mode/writable_roots 决定', source: `${DOC}/sandboxing` },
+      { id: 'files.upload', supported: 'native', description: '-i/--image 附加图片、--add-dir 附加目录', source: `${DOC}/cli/reference` },
+      { id: 'files.download', supported: 'adapter', description: '聚合器把产物交付宿主（file:export）', source: '聚合器 file:export（通道表）' },
+      { id: 'files.delete', supported: 'native', description: '沙箱内 shell 删除', source: `${DOC}/sandboxing` },
+      { id: 'files.export', supported: 'adapter', description: '聚合器导出通道', source: '聚合器 file:export（通道表）' },
+      { id: 'files.drag_drop', supported: 'adapter', description: 'UI 层交互，落地即附加文件', source: '聚合器 13.17 输入框拖拽预留' },
+    ],
+    computer: [
+      { id: 'computer.terminal', supported: 'native', description: '沙箱内 shell（codex sandbox 可直测策略）', source: `${DOC}/sandboxing` },
+      { id: 'computer.filesystem', supported: 'permission-required', description: 'sandbox_mode 三态 + writable_roots + deny 路径规则', source: `${DOC}/sandboxing` },
+      { id: 'computer.process', supported: 'native', description: '沙箱内子进程，危险命令走 approval', source: `${DOC}/sandboxing` },
+      { id: 'computer.browser', supported: 'unsupported', description: 'CLI 无浏览器控制（App 能力；可经 MCP 外接）', source: `${DOC}/sandboxing（仅 shell/文件系统/网络）` },
+      { id: 'computer.keyboard', supported: 'unsupported', description: 'CLI 沙箱无 GUI 键盘控制', source: `${DOC}/sandboxing` },
+      { id: 'computer.mouse', supported: 'unsupported', description: 'CLI 沙箱无 GUI 鼠标控制', source: `${DOC}/sandboxing` },
+      { id: 'computer.screen', supported: 'unsupported', description: 'CLI 沙箱无截屏/屏幕控制', source: `${DOC}/sandboxing` },
+      { id: 'computer.window', supported: 'unsupported', description: 'CLI 沙箱无窗口管理', source: `${DOC}/sandboxing` },
+    ],
+    browser: [
+      { id: 'browser.open', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp（官方 subagents 示例即用 chrome_devtools MCP）` },
+      { id: 'browser.navigate', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.click', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.type', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.download', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.upload', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.screenshot', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.tabs', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.cookies', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+      { id: 'browser.cdp', supported: 'adapter', description: 'CLI 本体无浏览器工具；聚合器经 MCP 外接（如 chrome_devtools MCP）实现', source: `${DOC}/mcp` },
+    ],
+    memory: [
+      { id: 'memory.read', supported: 'native', description: 'AGENTS.md（全局→仓库→子目录就近生效）+ memories 检索', source: `${DOC}/guides/agents-md` },
+      { id: 'memory.search', supported: 'native', description: 'memories 跨会话记忆（features.memories，默认关）', source: `${DOC}/config-reference` },
+      { id: 'memory.write', supported: 'native', description: 'memories 自动记忆 + AGENTS.md 编辑', source: `${DOC}/config-reference` },
+      { id: 'memory.delete', supported: 'unsupported', description: '官方未定位记忆删除命令', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'memory.profile', supported: 'native', description: '全局 ~/.codex/AGENTS.md 承载个人上下文', source: `${DOC}/guides/agents-md` },
+      { id: 'memory.external_provider', supported: 'unsupported', description: '无外接记忆提供方键', source: `${DOC}/config-reference（无对应键）` },
+    ],
+    skills: [
+      { id: 'skills.list', supported: 'native', description: '~/.codex/skills 与项目 .codex/skills（SKILL.md + frontmatter）', source: `${DOC}/skills` },
+      { id: 'skills.load', supported: 'native', description: 'skills.config.<name>.enabled 启停加载', source: `${DOC}/config-reference` },
+      { id: 'skills.create', supported: 'native', description: 'SKILL.md + 脚本/资源编写', source: `${DOC}/skills` },
+      { id: 'skills.update', supported: 'native', description: '技能文件即接口，直接更新', source: `${DOC}/skills` },
+      { id: 'skills.delete', supported: 'native', description: '删除技能目录', source: `${DOC}/skills` },
+      { id: 'skills.approval', supported: 'native', description: 'requirements.toml skills.managed_skills_only 管理员锁定', source: `${DOC}/config-reference` },
+    ],
+    mcp: [
+      { id: 'mcp.list', supported: 'native', description: 'codex mcp list', source: `${DOC}/mcp` },
+      { id: 'mcp.add', supported: 'native', description: 'codex mcp add（[mcp_servers.*]）', source: `${DOC}/mcp` },
+      { id: 'mcp.remove', supported: 'native', description: 'codex mcp remove', source: `${DOC}/mcp` },
+      { id: 'mcp.enable', supported: 'native', description: 'enabled_tools / mcp_servers.<name>.enabled', source: `${DOC}/config-reference` },
+      { id: 'mcp.disable', supported: 'native', description: 'disabled_tools / enabled 键', source: `${DOC}/config-reference` },
+      { id: 'mcp.tools', supported: 'native', description: '工具启停 + elicitation granular 审批（mcp_elicitations）', source: `${DOC}/config-reference` },
+      { id: 'mcp.resources', supported: 'unsupported', description: '官方仅明确 tools/prompts/elicitation，resources 消费未见明文', source: `${DOC}/mcp` },
+      { id: 'mcp.prompts', supported: 'native', description: '官方明确 prompts 支持', source: `${DOC}/mcp` },
+    ],
+    delegation: [
+      { id: 'delegation.supported', supported: 'native', description: 'features.multi_agent 默认开启', source: `${DOC}/config-reference` },
+      { id: 'delegation.spawn', supported: 'native', description: 'spawn_agent（核心池稳定，容器池实验）', source: `${DOC}/subagents` },
+      { id: 'delegation.parallel', supported: 'native', description: 'agents.max_threads=6 并行', source: `${DOC}/config-reference` },
+      { id: 'delegation.max_children', supported: 'native', description: 'agents.max_threads', source: `${DOC}/config-reference` },
+      { id: 'delegation.max_depth', supported: 'native', description: 'agents.max_depth=1（禁子 agent 再派生）', source: `${DOC}/config-reference` },
+      { id: 'delegation.orchestrator', supported: 'native', description: '[agents] 角色定义 + /agents /agent-tasks', source: `${DOC}/subagents` },
+      { id: 'delegation.worktree', supported: 'unsupported', description: '官方未定位 git worktree 隔离（云环境属 Codex Cloud）', source: `${DOC}/subagents（无对应项）` },
+    ],
+    security: [
+      { id: 'security.permissions', supported: 'native', description: 'approval_policy（on-request/never/granular）+ sandbox_mode 三态', source: `${DOC}/sandboxing` },
+      { id: 'security.approval', supported: 'native', description: 'TUI /approvals + projects trust_level', source: `${DOC}/config-reference` },
+      { id: 'security.smart_approval', supported: 'native', description: 'granular 审批 + permissions.profiles', source: `${DOC}/config-reference` },
+      { id: 'security.deny_rules', supported: 'native', description: 'permissions.profiles.*.filesystem deny + rules.prefix_rules forbid', source: `${DOC}/config-reference` },
+      { id: 'security.secret_redaction', supported: 'unsupported', description: '官方未定位输出密钥脱敏特性（env_key 仅供注入）', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'security.pii_redaction', supported: 'unsupported', description: '无 PII 脱敏键', source: `${DOC}/config-reference（无对应键）` },
+      { id: 'security.website_blocklist', supported: 'unsupported', description: '仅 network_access 开关，无网站黑名单', source: `${DOC}/sandboxing` },
+    ],
+    voice: [
+      { id: 'voice.input', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+      { id: 'voice.output', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+      { id: 'voice.stt', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+      { id: 'voice.tts', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+      { id: 'voice.vad', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+      { id: 'voice.streaming', supported: 'unsupported', description: 'CLI/官方文档无语音输入', source: `${DOC}（无对应能力）` },
+    ],
+    streaming: [
+      { id: 'streaming.chat', supported: 'native', description: 'codex exec --json JSONL 事件流', source: `${DOC}/noninteractive` },
+      { id: 'streaming.gateway', supported: 'native', description: 'codex app-server（stdio JSONL JSON-RPC，官方宿主集成通道）', source: `${DOC}/cli/reference` },
+      { id: 'streaming.events', supported: 'native', description: 'JSONL 事件（thread/turn 级）', source: `${DOC}/noninteractive` },
+    ],
+    gateway: [
+      { id: 'gateway.gateway', supported: 'native', description: 'app-server 进程间网关 + notify 外部通知（agent-turn-complete）', source: `${DOC}/cli/reference` },
+      { id: 'gateway.telegram', supported: 'unsupported', description: '消息渠道属 Codex 云端产品，CLI 本体无', source: `${DOC}（CLI 无对应能力，推断）` },
+      { id: 'gateway.discord', supported: 'unsupported', description: '消息渠道属 Codex 云端产品，CLI 本体无', source: `${DOC}（无对应能力）` },
+      { id: 'gateway.slack', supported: 'unsupported', description: '同上（Slack 入口属云端）', source: `${DOC}（无对应能力）` },
+      { id: 'gateway.whatsapp', supported: 'unsupported', description: '同上（Slack 入口属云端）', source: `${DOC}（无对应能力）` },
+    ],
+    task: [
+      { id: 'task.create', supported: 'unsupported', description: 'CLI 无任务队列（任务能力在 Codex Cloud/App Automations）', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'task.list', supported: 'unsupported', description: 'CLI 无任务队列（任务能力在 Codex Cloud/App Automations）', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'task.status', supported: 'unsupported', description: 'CLI 无任务队列（任务能力在 Codex Cloud/App Automations）', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'task.cancel', supported: 'adapter', description: '聚合器停 exec 进程实现', source: '聚合器 stopGeneration/stopAgent' },
+      { id: 'task.pause', supported: 'unsupported', description: 'CLI 无暂停语义', source: `${DOC}/cli/reference（无对应命令）` },
+      { id: 'task.resume', supported: 'native', description: 'resume_agent（子代理恢复）/ codex resume（会话）', source: `${DOC}/subagents` },
+      { id: 'task.queue', supported: 'adapter', description: '聚合器队列状态机（exec 一次性进程）', source: '聚合器 listQueue' },
+      { id: 'task.events', supported: 'native', description: 'notify 配置外部通知程序（JSON payload）', source: `${DOC}/config-reference` },
+    ],
+    transfer: [
+      { id: 'transfer.receive', supported: 'native', description: '官方三入口：codex exec（非交互接任务）/ codex mcp-server（官方明示供其它 agent 消费）/ app-server + SDK', source: `${DOC}/noninteractive` },
+      { id: 'transfer.send', supported: 'native', description: 'spawn_agent 派生子代理 + 经 MCP 调用其它 agent', source: `${DOC}/subagents` },
+      { id: 'transfer.file', supported: 'adapter', description: '聚合器把附带文件放入工作目录', source: '聚合器 file:export（通道表）' },
+      { id: 'transfer.conversation', supported: 'adapter', description: '上下文以转录注入 exec 提示（聚合器实现）', source: '聚合器 transferTask includeConversation' },
+      { id: 'transfer.task', supported: 'native', description: 'exec/app-server 接收任务载荷', source: `${DOC}/noninteractive` },
+      { id: 'transfer.queue', supported: 'adapter', description: '队列状态机在聚合器层', source: '聚合器 listQueue' },
+      { id: 'transfer.recommendation', supported: 'adapter', description: '推荐由聚合器按能力矩阵生成', source: '聚合器 getRecommendation（13.20 能力感知）' },
+    ],
+    settings: [
+      { id: 'settings.get', supported: 'adapter', description: 'config.toml 文件态 + TUI /model /approvals 可改；官方无 config get 命令，聚合器读取映射', source: `${DOC}/config-reference` },
+      { id: 'settings.set', supported: 'adapter', description: '聚合器写 config.toml（TUI 改动可写回；features enable/disable 直接持久化）', source: `${DOC}/config-reference` },
+      { id: 'settings.reset', supported: 'adapter', description: '聚合器按官方 Schema 默认值回写', source: '聚合器 resetSettings' },
+      { id: 'settings.export', supported: 'adapter', description: '聚合器导出（剔除 Secret）', source: '聚合器 exportSettings' },
+      { id: 'settings.import', supported: 'adapter', description: '聚合器导入校验', source: '聚合器 importSettings' },
+      { id: 'settings.schema', supported: 'native', description: '官方 JSON Schema（config-schema.json）+ config-reference 全键清单', source: `${DOC}/config-schema.json` },
+      { id: 'settings.reload', supported: 'unsupported', description: '多数键需新会话生效（无热重载命令）', source: `${DOC}/config-reference（推断）` },
+    ],
+    update: [
+      { id: 'update.check', supported: 'native', description: 'check_for_update_on_startup + notify_update_on_next_run', source: `${DOC}/config-reference` },
+      { id: 'update.download', supported: 'native', description: 'codex update', source: `${DOC}/cli/reference` },
+      { id: 'update.install', supported: 'native', description: '同上（npm 发行）', source: `${DOC}/cli/reference` },
+      { id: 'update.rollback', supported: 'adapter', description: '官方无回滚特性；聚合器经 npm 安装固定版本实现', source: 'npm（npm install -g @openai/codex@<version>）' },
+    ],
+  },
+}
+
+/** Codex 原生设置 Schema（TS 面）——键名以官方 config-reference / config-schema.json 为准 */
+export const CODEX_SETTINGS_SCHEMA: AgentSettingsField[] = [
+  { key: 'model', uiName: '主模型', type: 'string', description: '主模型名（顶层键 / -m / profile）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'models', status: 'implemented', capability: 'model.switch', source: `${DOC}/config-reference` },
+  { key: 'model_providers', uiName: '模型提供方', type: 'object', description: '[model_providers.*]（name/base_url/env_key/重试；wire_api 仅 responses）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'providers', status: 'implemented', capability: 'model.providers', source: `${DOC}/config-reference` },
+  { key: 'model_reasoning_effort', uiName: '推理力度', type: 'enum', enumValues: ['minimal', 'low', 'medium', 'high', 'none'], description: '推理力度档位', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'models', status: 'implemented', capability: 'model.reasoning', source: `${DOC}/config-reference` },
+  { key: 'model_verbosity', uiName: '文本详细度', type: 'enum', enumValues: ['low', 'medium', 'high'], description: '输出详细度档位', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'models', status: 'planned', capability: 'model.verbosity', source: `${DOC}/config-reference` },
+  { key: 'review_model', uiName: '评审模型', type: 'string', description: '/review 独立模型', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'models', status: 'implemented', capability: 'auxiliary.review', source: `${DOC}/config-reference` },
+  { key: 'approval_policy', uiName: '审批策略', type: 'enum', enumValues: ['on-request', 'never', 'granular'], description: '审批策略（on-failure 已弃用、untrusted 已退役）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'security', status: 'planned', capability: 'security.approval', source: `${DOC}/approvals-migration` },
+  { key: 'sandbox_mode', uiName: '沙箱模式', type: 'enum', enumValues: ['read-only', 'workspace-write', 'danger-full-access'], description: '沙箱模式三态取值', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'security', status: 'planned', capability: 'security.permissions', source: `${DOC}/sandboxing` },
+  { key: 'windows.sandbox_mode', uiName: 'Windows 沙箱', type: 'enum', enumValues: ['unelevated', 'elevated'], description: 'Windows 内置沙箱（非提升 / 受限令牌）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'security', status: 'planned', capability: 'computer.terminal', source: `${DOC}/sandboxing` },
+  { key: 'mcp_servers', uiName: 'MCP 服务器', type: 'object', description: '[mcp_servers.*]（command/args/env/enabled/超时）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'keys', status: 'planned', capability: 'mcp.list', source: `${DOC}/mcp` },
+  { key: 'skills.config', uiName: '技能启停', type: 'object', description: 'skills.config.<name>.enabled', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: false, page: 'plugins', status: 'planned', capability: 'skills.load', source: `${DOC}/skills` },
+  { key: 'features.multi_agent', uiName: '多代理', type: 'boolean', description: 'multi_agent（默认开启）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'advanced', status: 'planned', capability: 'delegation.supported', source: `${DOC}/config-reference` },
+  { key: 'features.memories', uiName: '自动记忆', type: 'boolean', description: 'memories 开关（默认关闭）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'memory', status: 'planned', capability: 'memory.search', source: `${DOC}/config-reference` },
+  { key: 'agents.max_threads', uiName: '子代理并发', type: 'number', description: '并发上限（默认 6）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'advanced', status: 'planned', capability: 'delegation.max_children', source: `${DOC}/config-reference` },
+  { key: 'agents.max_depth', uiName: '派生深度', type: 'number', description: '默认 1（禁再派生）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'advanced', status: 'planned', capability: 'delegation.max_depth', source: `${DOC}/config-reference` },
+  { key: 'notify', uiName: '外部通知', type: 'string', description: '外部通知程序（agent-turn-complete JSON）', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'notifications', status: 'planned', capability: 'task.events', source: `${DOC}/config-reference` },
+  { key: 'history.persistence', uiName: '历史持久化', type: 'boolean', description: 'history.jsonl 保存开关', configFile: 'config.toml', secret: false, runtimeChange: false, requiresRestart: true, page: 'chat', status: 'planned', source: `${DOC}/config-reference` },
+  { key: 'env_key', uiName: '提供方 API Key', type: 'string', description: '密钥经环境变量注入（值只进环境变量/安全存储，toml 只记变量名）', configFile: 'env', secret: true, runtimeChange: false, requiresRestart: true, page: 'keys', status: 'advanced/native-only', capability: 'model.providers', source: `${DOC}/config-reference` },
+]

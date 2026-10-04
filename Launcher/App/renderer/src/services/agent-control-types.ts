@@ -5,6 +5,8 @@
  * 全部 Promise 返回、字段可注释溯源、绝不让 UI 拿到歧义形状。
  * 本文件只放类型（零运行时代码），可被 Node strip-types 的单测安全引用。
  */
+import type { AgentCapabilities, AgentSettingsField } from './agent-capability-types.ts'
+export type { AgentCapabilities, AgentSettingsField } from './agent-capability-types.ts'
 
 /** Agent 运行状态（与 pm 层五态同名；stub 状态机使用同一取值域） */
 export type AgentStatus = 'RUNNING' | 'STOPPED' | 'STARTING' | 'STOPPING' | 'ERROR'
@@ -171,6 +173,78 @@ export interface ArchivedSession {
   archivedAt: number
 }
 
+// —— 13.20 统一能力层（任务书 §五：统一 Agent Interface）———————————————————
+/**
+ * Agent 官方身份档案（getInfo）。版本为项目锁定版本，与 AGENT-SOURCES.md 一致；
+ * stub 为静态记录（不联网探测），真实探测在接线轮经 manifest:get + agents:probe 落地。
+ */
+export interface AgentInfo {
+  id: string
+  name: string
+  /** 项目锁定版本（openclaw 2026.9.5 / hermes 0.21.4 / codex 0.156.1 / claude-code 2.1.288） */
+  version: string
+  repoUrl: string
+  docsUrl: string
+  /** 本地入口（命令或可执行文件） */
+  localEntry: string
+  /** 原生配置入口（config 文件） */
+  configEntrance: string
+  /** 版本差距说明（官方最新 vs 锁定版，静态记录） */
+  versionNote: string
+}
+
+/** 更新检查结果（stub 不联网：latestVersion=null、upToDate=null，message 显式带 stub） */
+export interface UpdateStatus {
+  agentId: string
+  currentVersion: string
+  latestVersion: string | null
+  upToDate: boolean | null
+  message: string
+}
+
+/** Provider 连通性测试（stub 不接真实 API：ok=false + 显式说明，绝不伪造成功） */
+export interface ProviderTestResult {
+  ok: boolean
+  message: string
+  latencyMs?: number
+}
+
+/** 凭据查询结果——只含配置状态与掩码，永远不含明文（密钥零接触） */
+export interface CredentialStatus {
+  ref: string
+  configured: boolean
+  /** 形如 '••••••••'；未配置时为空串 */
+  maskedValue: string
+}
+
+/** 凭据连通性测试结果（stub 只报「未真实校验」，不伪造成功） */
+export interface CredentialTestResult {
+  ok: boolean
+  message: string
+}
+
+/**
+ * 凭据服务（13.20 任务书 §十：Secret 与普通设置严格隔离）。
+ * API Key / OAuth Token / SSH 私钥 / MCP Secret 一律不进普通 settings JSON：
+ * UI 只拿 configured + maskedValue；完整明文只进系统安全存储（真接线轮落地）。
+ */
+export interface CredentialService {
+  hasCredential(ref: string): Promise<boolean>
+  /** 只返回 configured + maskedValue；任何实现都不得返回明文 */
+  getCredential(ref: string): Promise<CredentialStatus>
+  /** 写入凭据（stub 仅内存态；真实实现走系统安全存储） */
+  setCredential(ref: string, value: string): Promise<void>
+  deleteCredential(ref: string): Promise<void>
+  testCredential(ref: string): Promise<CredentialTestResult>
+}
+
+/** 设置导入导出（与 exportSession 同形：内容字符串由 UI 决定落盘方式） */
+export interface ExportedSettings {
+  filename: string
+  /** JSON 字符串；仅含非 Secret 字段（secret=true 的项导出时剔除） */
+  content: string
+}
+
 export type StatusChangeHandler = (id: string, status: AgentStatus) => void
 export type OutputHandler = (id: string, entry: OutputEntry) => void
 
@@ -276,6 +350,30 @@ export interface AgentControlService {
   /** 从归档移除并回到会话列表（stub 仅移除+由 UI toast） */
   restoreArchivedSession(id: string): Promise<void>
   deleteArchivedSessionForever(id: string): Promise<void>
+
+  // —— 统一能力层（13.20 任务书 §五；接口随 Capability Matrix 裁剪，不凑数）———————
+  /** 官方身份档案（版本/仓库/文档/本地入口/配置入口；stub 为 AGENT-SOURCES 静态记录） */
+  getInfo(id: string): Promise<AgentInfo>
+  /** 能力全景（20 组 × 五态；UI 与转交推荐只据此判断，绝不伪造 unsupported 能力） */
+  getCapabilities(id: string): Promise<AgentCapabilities>
+  /** 会话归档：从会话列表移入归档（13.18 已有恢复/删除，本轮补齐归档入口） */
+  archiveSession(id: string, sessionId: string): Promise<void>
+  /** 更新检查（stub 不联网：upToDate=null；接线轮映射 update:check） */
+  checkUpdate(id: string): Promise<UpdateStatus>
+  /** Provider 连通性测试（stub 不发任何真实请求，ok=false + 说明） */
+  testProvider(providerId: string): Promise<ProviderTestResult>
+  /** 原生设置 Schema（13.20 §七；Hermes 全量映射的 TS 面，其余 Agent 为已知键） */
+  getSettingsSchema(agentId: string): Promise<AgentSettingsField[]>
+  /** 读取原生设置的内存镜像（stub 不读真实配置文件；真接线轮经 settings:get） */
+  getSettings(agentId: string): Promise<Record<string, unknown>>
+  /** 写入内存镜像并按 Schema 校验（stub 不落盘；Secret 键拒绝走此通道） */
+  setSettings(agentId: string, values: Record<string, unknown>): Promise<void>
+  /** 重置为 Schema 默认值（内存镜像层） */
+  resetSettings(agentId: string, keys?: string[]): Promise<void>
+  /** 导出内存镜像为 JSON（secret=true 的项剔除，明文永不出口） */
+  exportSettings(agentId: string): Promise<ExportedSettings>
+  /** 导入 JSON 到内存镜像（Schema 校验；返回导入条数） */
+  importSettings(agentId: string, json: string): Promise<number>
 
   onStatusChange(cb: StatusChangeHandler): () => void
   onOutput(cb: OutputHandler): () => void

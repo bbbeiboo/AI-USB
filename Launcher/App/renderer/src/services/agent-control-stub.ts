@@ -15,18 +15,24 @@
  * 本文件零运行时依赖（仅 import type），Node strip-types 可直接加载（根 tests/ 单测）。
  */
 import type {
+  AgentCapabilities,
   AgentControlService,
+  AgentInfo,
   AgentRecommendation,
+  AgentSettingsField,
   AgentStatus,
   AgentSummary,
   AppNotification,
   ArchivedSession,
   AuxModelBinding,
   CallRecord,
+  CredentialService,
+  ExportedSettings,
   FileItem,
   MainModelConfig,
   OutputEntry,
   OutputHandler,
+  ProviderTestResult,
   QueueEntry,
   ReasoningLevel,
   SessionMeta,
@@ -36,7 +42,9 @@ import type {
   TaskItem,
   TransferPayload,
   TransferResult,
+  UpdateStatus,
 } from './agent-control-types.ts'
+import { AGENT_CAPABILITIES, AGENT_INFO, AGENT_SETTINGS_SCHEMAS, canAcceptTransfer } from './capabilities/index.ts'
 
 export interface StubOptions {
   startDelayMs?: number
@@ -462,7 +470,11 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     record('getRecommendation', sourceAgentId)
     assertAgent(sourceAgentId)
     const rec = STUB_RECOMMENDATIONS[sourceAgentId]
-    return rec ? { ...rec } : null
+    if (!rec) return null
+    // 13.20 能力感知推荐：按「全部附带内容」的最坏假设过滤——目标接不住就不出卡
+    const gate = canAcceptTransfer(rec.agentId, { includeConversation: true, includeFiles: true, includeTask: true })
+    if (!gate.ok) return null
+    return { ...rec }
   }
   async function transferTask(payload: TransferPayload): Promise<TransferResult> {
     record('transferTask', payload)
@@ -472,6 +484,9 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     if (payload.targetAgentId === payload.sourceAgentId) {
       throw new Error('stub: cannot transfer to self')
     }
+    // 13.20 转交能力门控：目标 Agent 能力不支持的附带内容直接拒绝（不伪造支持）
+    const gate = canAcceptTransfer(payload.targetAgentId, payload)
+    if (!gate.ok) throw new Error(`stub: ${gate.reason}`)
     await sleep(600)
     const source = seed(payload.sourceAgentId)
     const target = seed(payload.targetAgentId)
@@ -559,6 +574,148 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     if (i < 0) throw new Error(`stub: archived session ${id} not found`)
     archived.splice(i, 1)
   }
+  // ---- 13.20 统一能力层 --------------------------------------------------------
+  async function getInfo(id: string): Promise<AgentInfo> {
+    record('getInfo', id)
+    assertAgent(id)
+    return { ...AGENT_INFO[id] }
+  }
+  async function getCapabilities(id: string): Promise<AgentCapabilities> {
+    record('getCapabilities', id)
+    assertAgent(id)
+    return structuredClone(AGENT_CAPABILITIES[id])
+  }
+  async function archiveSession(id: string, sessionId: string): Promise<void> {
+    record('archiveSession', id, sessionId)
+    assertAgent(id)
+    const list = sessions.get(id)
+    const i = list?.findIndex((s) => s.id === sessionId) ?? -1
+    if (i < 0 || !list) throw new Error(`stub: session ${sessionId} not found`)
+    const [meta] = list.splice(i, 1)
+    archived.unshift({ id: meta.id, agentId: id, title: meta.title, archivedAt: Date.now() })
+    outputs.delete(sessionId)
+    if (currentSession.get(id) === sessionId) {
+      const next = sortedSessions(id)[0]?.id
+      if (next) currentSession.set(id, next)
+      else currentSession.delete(id)
+    }
+  }
+  async function checkUpdate(id: string): Promise<UpdateStatus> {
+    record('checkUpdate', id)
+    assertAgent(id)
+    const info = AGENT_INFO[id]
+    // stub 不联网：latest/upToDate 均为 null，绝不伪造「已是最新」
+    return {
+      agentId: id,
+      currentVersion: info.version,
+      latestVersion: null,
+      upToDate: null,
+      message: `stub：未联网检查更新。${info.versionNote}`,
+    }
+  }
+  async function testProvider(providerId: string): Promise<ProviderTestResult> {
+    record('testProvider', providerId)
+    if (!SETTINGS_PROVIDERS.some((p) => p.id === providerId)) {
+      throw new Error(`stub: unknown provider ${providerId}`)
+    }
+    // 不接真实 Provider API：不伪造连通性成功（任务书 §十五.12/13）
+    return { ok: false, message: 'stub：未接入真实 Provider API，未发送任何请求（不伪造连通性成功）' }
+  }
+
+  // 原生设置内存镜像：默认值来自 Schema，get/set 全部只在内存（stub 不读不写真实配置文件）
+  const settingsMirror = new Map<string, Record<string, unknown>>()
+  function schemaOf(agentId: string): AgentSettingsField[] {
+    if (!AGENT_SETTINGS_SCHEMAS[agentId]) throw new Error(`stub: unknown agent ${agentId}`)
+    return AGENT_SETTINGS_SCHEMAS[agentId]
+  }
+  function defaultsOf(agentId: string): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    for (const f of schemaOf(agentId)) {
+      if (f.secret) continue
+      out[f.key] = f.defaultValue ?? (f.type === 'boolean' ? false : f.type === 'number' ? 0 : '')
+    }
+    return out
+  }
+  function mirrorOf(agentId: string): Record<string, unknown> {
+    let m = settingsMirror.get(agentId)
+    if (!m) {
+      m = defaultsOf(agentId)
+      settingsMirror.set(agentId, m)
+    }
+    return m
+  }
+  /** Schema 校验 + Secret 拒入（密钥零接触：Secret 值只能走 CredentialService） */
+  function validateSetting(agentId: string, key: string, value: unknown): void {
+    const field = schemaOf(agentId).find((f) => f.key === key)
+    if (!field) throw new Error(`stub: unknown settings key ${key} for ${agentId}`)
+    if (field.secret) throw new Error(`stub: ${key} 是 Secret 字段，必须走 CredentialService（密钥零接触）`)
+    if (field.type === 'number' && typeof value !== 'number') throw new Error(`stub: ${key} 需要 number`)
+    if (field.type === 'boolean' && typeof value !== 'boolean') throw new Error(`stub: ${key} 需要 boolean`)
+    if (field.type === 'enum' && !(field.enumValues ?? []).includes(String(value))) {
+      throw new Error(`stub: ${key} 取值须为 ${JSON.stringify(field.enumValues)}`)
+    }
+  }
+  async function getSettingsSchema(agentId: string): Promise<AgentSettingsField[]> {
+    record('getSettingsSchema', agentId)
+    return structuredClone(schemaOf(agentId))
+  }
+  async function getSettings(agentId: string): Promise<Record<string, unknown>> {
+    record('getSettings', agentId)
+    return { ...mirrorOf(agentId) }
+  }
+  async function setSettings(agentId: string, values: Record<string, unknown>): Promise<void> {
+    record('setSettings', agentId, values)
+    const mirror = mirrorOf(agentId)
+    for (const [key, value] of Object.entries(values)) {
+      validateSetting(agentId, key, value)
+      mirror[key] = value
+    }
+  }
+  async function resetSettings(agentId: string, keys?: string[]): Promise<void> {
+    record('resetSettings', agentId, keys)
+    const mirror = mirrorOf(agentId)
+    const defaults = defaultsOf(agentId)
+    for (const key of keys ?? Object.keys(defaults)) {
+      if (key in defaults) mirror[key] = defaults[key]
+    }
+  }
+  async function exportSettings(agentId: string): Promise<ExportedSettings> {
+    record('exportSettings', agentId)
+    assertAgent(agentId)
+    const mirror = mirrorOf(agentId)
+    // Secret 字段绝不导出（值本来就不在镜像里，这里再按 Schema 双保险剔除）
+    const secretKeys = new Set(schemaOf(agentId).filter((f) => f.secret).map((f) => f.key))
+    const settings: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(mirror)) {
+      if (!secretKeys.has(k)) settings[k] = v
+    }
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')
+    return {
+      filename: `${agentId}-settings-${stamp}.json`,
+      content: JSON.stringify({ agentId, exportedBy: 'stub', exportedAt: Date.now(), settings }, null, 2),
+    }
+  }
+  async function importSettings(agentId: string, json: string): Promise<number> {
+    record('importSettings', agentId, json)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(json)
+    } catch {
+      throw new Error('stub: importSettings 需要合法 JSON')
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('stub: importSettings 需要 settings 对象')
+    }
+    const mirror = mirrorOf(agentId)
+    let count = 0
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      validateSetting(agentId, key, value)
+      mirror[key] = value
+      count++
+    }
+    return count
+  }
+
   function onStatusChange(cb: StatusChangeHandler): () => void {
     statusCbs.add(cb)
     return () => statusCbs.delete(cb)
@@ -596,7 +753,37 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     listSettingsSections, listSettingsProviders, getMainModelConfig, setMainModelConfig,
     listAuxModels, setAuxModel, resetAllAuxModels,
     listArchivedSessions, restoreArchivedSession, deleteArchivedSessionForever,
+    getInfo, getCapabilities, archiveSession, checkUpdate, testProvider,
+    getSettingsSchema, getSettings, setSettings, resetSettings, exportSettings, importSettings,
     onStatusChange, onOutput,
     __calls: calls,
+  }
+}
+
+/**
+ * stubCredentialService —— 凭据服务 stub（13.20 任务书 §十：Secret 与普通设置隔离）。
+ * 内存态存储；getCredential 只回 configured + 掩码，明文永不出口；
+ * testCredential 明确报「未真实校验」，不伪造成功。真实实现走系统安全存储（真接线轮）。
+ */
+export function createStubCredentialService(): CredentialService {
+  const store = new Map<string, string>()
+  return {
+    async hasCredential(ref: string) {
+      return store.has(ref)
+    },
+    async getCredential(ref: string) {
+      const configured = store.has(ref)
+      return { ref, configured, maskedValue: configured ? '••••••••' : '' }
+    },
+    async setCredential(ref: string, value: string) {
+      if (!value) throw new Error('stub: 凭据值不能为空')
+      store.set(ref, value)
+    },
+    async deleteCredential(ref: string) {
+      store.delete(ref)
+    },
+    async testCredential(_ref: string) {
+      return { ok: false, message: 'stub：未接入真实凭据校验，未发送任何请求（不伪造成功）' }
+    },
   }
 }

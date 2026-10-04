@@ -1373,3 +1373,54 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
   渲染干净（无字母回退、无棋盘格残留、透明底正常），截图 3 张 _verify/1319-*.png；
   零净写入基线一致。commit 12d2b4c。
 - 注意：pip 装了 pillow（12.3.0）仅作一次性资产处理工具，非项目依赖（package.json 零变化）。
+
+## 13.20 四 Agent 全量能力接口兼容层 + Hermes 全量设置映射（任务书全量）
+
+> 注：任务书原文自标题为「13.19 轮」，但 13.19 已被 logo 更换轮占用，本轮按序记为 13.20。
+
+### 需求与实现
+| 任务书要求 | 实现 |
+| --- | --- |
+| §二 AGENT-SOURCES | docs/AGENT-SOURCES.md：四 Agent 官方仓库/文档/锁定版本/入口/配置面；版本全部实测取证（openclaw 2026.9.5、hermes 0.21.4 upstream c0d7294、codex 0.156.1、claude-code 2.1.288） |
+| §三 Capability Matrix | docs/AGENT-CAPABILITY-MATRIX.md + capabilities/*.ts：20 组 × 133 条能力 id 四 Agent 同名同义（单测钉死），五态 native/adapter/permission-required/sandbox-only/unsupported，每条带官方 source |
+| §四 Capability 类型 | services/agent-capability-types.ts（纯类型） |
+| §五 统一接口 | agent-control-types.ts +11 方法：getInfo/getCapabilities/archiveSession/checkUpdate/testProvider/getSettingsSchema/get/set/reset/export/importSettings；stub 全实现、real 全 notWired（通道表补 6 行） |
+| §六 每 Agent Adapter | 适配现有 services/ 结构：services/capabilities/{hermes,openclaw,codex,claude-code,index,info}.ts（不重构 agents/ 目录；src/core/adapters/*.js 零改动） |
+| §七/§八 Hermes 设置 | docs/HERMES-SETTINGS-MATRIX.md：25 类 451 条（官方 Key/类型/默认值/可选值/作用/文件/Secret/Runtime/Restart/Source），数据源=本地官方源码包 config_defaults.py + cli-config.yaml.example + 本机 config.yaml diff（仅 6 处差异） |
+| §九 三层分离 | 矩阵文档列清 Hermes 原生 / 聚合器 / 聚合器安全 三清单 |
+| §十 Secret | CredentialService 接口 + stub（内存态）：getCredential 只回 configured+掩码；单测断言序列化结果不含明文；testCredential 明确报「未真实校验」 |
+| §十一 状态标记 | AgentSettingsField.status = implemented/planned/advanced/native-only；本轮 UI 零改动（任务书允许） |
+| §十二 显隐裁决 | 统一裁决=「显示但明确标记不支持」（docs/AGENT-CAPABILITY-UI-MAP.md §0，三条理由） |
+| §十三 Transfer 能力化 | canAcceptTransfer 门控：transferTask 按目标能力拒绝（含人话 reason）；getRecommendation 按「全部附带内容」最坏假设过滤 |
+| §十四 UI 映射 | docs/AGENT-CAPABILITY-UI-MAP.md：能力组→UI 落点全表 + 新增 Agent 五步操作顺序 |
+| §十八/§十九 | 四份 MD 全部产出；按报告格式输出 |
+
+### 关键裁决
+1. **能力基线=锁定版本**，官方最新（openclaw 2026.9.8 / codex 0.160.0 / claude-code 2.1.289 / hermes 上游 7900+ commits）只记差异注记。
+2. **Hermes 依据=本地官方源码**（最可靠）；其余三家=官方文档；第三方教程一律不作依据。
+3. **unsupported 不伪造**：testProvider/checkUpdate/凭据 test 的 stub 一律 ok=false+说明，绝不伪造成功。
+4. 接口按矩阵裁剪：任务书 §五 清单中 listProviders≈已有 listSettingsProviders、createSession≈newSession 等，不重复造方法（任务书授权「不得为接口数量制造无意义方法」）。
+
+### 调研反直觉发现（官方文档明确，已写入矩阵）
+- Claude Code **有** /voice 听写（需 claude.ai 账户）与 channels（Telegram/Discord 预览版）；macOS CLI 有内置 computer-use MCP（research preview）——Windows CLI 才是键鼠屏幕 ✗。
+- OpenClaw 配置官方格式是 **JSON5 openclaw.json**（非 yaml）；桌面控制是真原生 computer.act 视觉循环（Windows 为实验性 cua-computer）；transfer.receive 是 native（webhooks/A2A/RPC）。
+- Codex CLI 沙箱只覆盖 shell/文件系统/网络；浏览器/GUI 属 Codex App；有官方 config-schema.json。
+- Hermes 本机 config.yaml **零明文密钥**：Launcher 经 DPAPI 解密后以 HERMES_LAUNCHER_API_KEY 环境变量注入，config 只引用变量名。
+
+### 新坑
+- 并发子代理限额：同时跑 5 个（后 3 个）/4 个（后 2 个）都会「user concurrency limit exceeded」——≥3 并发即失败，2 并发安全；失败任务需串行重发。
+- capabilities/ 子目录 import 路径：'./agent-capability-types.ts' 应为 '../'（tsc TS2307）。
+- ConfigFileLocation 需补 'openclaw.json' 枚举（OpenClaw 官方格式纠偏的连锁）。
+- 描述写「同上」会挂测试非空断言（≥6 字符）——描述必须自包含。
+
+### 验收
+- 单测 77/77（61 旧不降 + 16 新：20 组顺序契约、133 id 四家一致、unsupported 如实性锚点、adapter 锚点、门控拦截/放行、Hermes Schema、Secret 拒入+导出剔除、凭据明文零出口、archiveSession、checkUpdate/testProvider 防伪）。
+- tsc 0 errors；vite build 通过（index-BvxTiZVC.js）；重打包后 asar 内 grep 到 transfer.receive×6/not-wired-yet/新文案，logo 齐全。
+- 真机：PID 23368 启动，UIA 关键 Aid（agent-switcher/model-selector/agent-ctrl-send/app-settings/input-box/side-nav）全在；设置中心开/关（app-settings 点击→settings-dialog→Esc）正常；同帧截图可见双层隔离未破（设置层 glm-5.3 vs 输入框 qwen 3.8 27B）。
+- 零净写入：14 文件基线前后一致（launcher.log 豁免=本次启停事件）。
+
+### 未完成 / Stub 边界（下一轮接线）
+- capabilities 数据为「静态知识层」：真接线轮按 AGENT-CAPABILITY-MATRIX 通道表接入真实探测（agent:info、update:check、provider:test、settings:native、credential:*）。
+- CredentialService stub 仅内存；真实实现走系统安全存储（DPAPI 已有先例）。
+- 14 个占位设置页待后续版本；设置页字段级渲染（implemented/planned/advanced）按 UI-MAP 在接线轮落地。
+- codex/claude-code 最新版本号会漂移，接线轮应改为动态探测。

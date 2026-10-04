@@ -31,6 +31,13 @@
  * | listSettingsSections/listSettingsProviders/getMainModelConfig/listAuxModels/listArchivedSessions | 需新增 settings:get | 无 |
  * | setMainModelConfig/setAuxModel/resetAllAuxModels | 需新增 settings:update（写 provider 缓存） | 无 |
  * | restoreArchivedSession/deleteArchivedSessionForever | 需新增 archive:restore / archive:delete | 无 |
+ * | getInfo/getCapabilities | 渲染层静态数据（services/capabilities/，13.20）→ 接线轮可加 agent:info | 无需通道 |
+ * | archiveSession          | 需新增 archive:add（写操作）                  | 无 |
+ * | checkUpdate             | 需新增 update:check（per-agent）              | 无 |
+ * | testProvider            | 需新增 provider:test（真实连通性探测）        | 无 |
+ * | getSettingsSchema       | 渲染层静态数据（AGENT_SETTINGS_SCHEMAS）      | 无需通道 |
+ * | getSettings/setSettings/resetSettings/exportSettings/importSettings | 需新增 settings:native（读改各 Agent 原生配置文件；Secret 键拒绝走此通道） | 无 |
+ * | CredentialService.*     | 需新增 credential:*（系统安全存储，UI 只拿 masked） | 无 |
  *
  * 会话/输出类通道依赖「Agent 会话数据源」的裁决（Agent TUI 的会话持久化位置），
  * 下一轮接线前需先与用户确认数据来源，不在本轮范围。
@@ -81,6 +88,26 @@ export const realAgentControlService: AgentControlService = {
   async listArchivedSessions() { notWired('listArchivedSessions') },
   async restoreArchivedSession() { notWired('restoreArchivedSession') },
   async deleteArchivedSessionForever() { notWired('deleteArchivedSessionForever') },
+  async getInfo() { notWired('getInfo') },
+  async getCapabilities() { notWired('getCapabilities') },
+  async archiveSession() { notWired('archiveSession') },
+  async checkUpdate() { notWired('checkUpdate') },
+  async testProvider() { notWired('testProvider') },
+  async getSettingsSchema() { notWired('getSettingsSchema') },
+  async getSettings() { notWired('getSettings') },
+  async setSettings() { notWired('setSettings') },
+  async resetSettings() { notWired('resetSettings') },
+  async exportSettings() { notWired('exportSettings') },
+  async importSettings() { notWired('importSettings') },
   onStatusChange() { notWired('onStatusChange') },
   onOutput() { notWired('onOutput') },
+}
+
+/** realCredentialService —— 真实凭据服务骨架（系统安全存储，接线轮落地；UI 只拿 masked） */
+export const realCredentialService: import('./agent-control-types.ts').CredentialService = {
+  async hasCredential() { notWired('hasCredential') },
+  async getCredential() { notWired('getCredential') },
+  async setCredential() { notWired('setCredential') },
+  async deleteCredential() { notWired('deleteCredential') },
+  async testCredential() { notWired('testCredential') },
 }

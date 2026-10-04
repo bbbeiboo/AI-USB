@@ -25,6 +25,8 @@ test('工厂默认返回 stub：接口方法齐全且为函数', async () => {
     'listSettingsSections', 'listSettingsProviders', 'getMainModelConfig', 'setMainModelConfig',
     'listAuxModels', 'setAuxModel', 'resetAllAuxModels',
     'listArchivedSessions', 'restoreArchivedSession', 'deleteArchivedSessionForever',
+    'getInfo', 'getCapabilities', 'archiveSession', 'checkUpdate', 'testProvider',
+    'getSettingsSchema', 'getSettings', 'setSettings', 'resetSettings', 'exportSettings', 'importSettings',
     'onStatusChange', 'onOutput']) {
     assert.equal(typeof svc[m], 'function', `method ${m}`);
   }
@@ -418,5 +420,16 @@ test('realAgentControlService：每方法都 throw not-wired-yet（骨架契约�
   await assert.rejects(() => realAgentControlService.listArchivedSessions(), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.restoreArchivedSession('x'), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.deleteArchivedSessionForever('x'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getInfo('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getCapabilities('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.archiveSession('hermes', 's'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.checkUpdate('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.testProvider('sensenova'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getSettingsSchema('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getSettings('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.setSettings('hermes', {}), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.resetSettings('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.exportSettings('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.importSettings('hermes', '{}'), /not-wired-yet/);
   assert.throws(() => realAgentControlService.onStatusChange(() => {}), /not-wired-yet/);
 });

@@ -22,6 +22,9 @@ test('工厂默认返回 stub：接口方法齐全且为函数', async () => {
     'listModels', 'getModel', 'setModel',
     'listTasks', 'listQueue', 'listFiles',
     'getRecommendation', 'transferTask', 'listNotifications', 'stopGeneration',
+    'listSettingsSections', 'listSettingsProviders', 'getMainModelConfig', 'setMainModelConfig',
+    'listAuxModels', 'setAuxModel', 'resetAllAuxModels',
+    'listArchivedSessions', 'restoreArchivedSession', 'deleteArchivedSessionForever',
     'onStatusChange', 'onOutput']) {
     assert.equal(typeof svc[m], 'function', `method ${m}`);
   }
@@ -293,6 +296,89 @@ test('13.17 stopGeneration：正常完成的发送不受影响', async () => {
   await svc.stopGeneration('hermes'); // 空闲时调用应无副作用
 });
 
+test('13.18 设置：18 项导航顺序与 id 契约固定', async () => {
+  const svc = makeFast();
+  const sections = await svc.listSettingsSections();
+  assert.deepEqual(sections, [
+    'models', 'chat', 'appearance', 'workspace', 'security', 'browser', 'memory',
+    'voice', 'advanced', 'notifications', 'billing', 'providers', 'gateway',
+    'hotkeys', 'keys', 'plugins', 'archived', 'about',
+  ]);
+});
+
+test('13.18 主模型配置：默认 sensenova、校验落点、与对话级切换器双层隔离', async () => {
+  const svc = makeFast();
+  const cfg = await svc.getMainModelConfig();
+  assert.equal(cfg.providerId, 'sensenova');
+  assert.ok(['low', 'medium', 'high'].includes(cfg.reasoningLevel));
+  // 提供方清单模型名必须与 13.17 STUB_MODELS 同源（不出现第二套名字）
+  const known = new Set();
+  for (const id of ['openclaw', 'hermes', 'codex', 'claude-code']) {
+    for (const m of await svc.listModels(id)) known.add(m);
+  }
+  for (const p of await svc.listSettingsProviders()) {
+    assert.ok(p.models.length >= 2, `提供方 ${p.id} 应有模型`);
+    for (const m of p.models) assert.ok(known.has(m), `模型 ${m} 应来自 13.17 已有名`);
+  }
+  // 应用：合法 → 生效；非法 → 拒绝
+  await svc.setMainModelConfig({ providerId: 'anthropic', model: 'claude-opus-4.1', reasoningLevel: 'medium' });
+  const after = await svc.getMainModelConfig();
+  assert.equal(after.providerId, 'anthropic');
+  assert.equal(after.model, 'claude-opus-4.1');
+  assert.equal(after.reasoningLevel, 'medium');
+  await assert.rejects(() => svc.setMainModelConfig({ providerId: 'nope', model: 'x', reasoningLevel: 'high' }), /unknown provider/);
+  await assert.rejects(() => svc.setMainModelConfig({ providerId: 'openai', model: 'claude-opus-4.1', reasoningLevel: 'high' }), /not in provider/);
+  await assert.rejects(() => svc.setMainModelConfig({ providerId: 'openai', model: 'o4-mini', reasoningLevel: 'ultra' }), /reasoning level/);
+  // 双层隔离：设置层变更不影响对话级当前模型；对话级切换也不影响设置层
+  const agentModelBefore = await svc.getModel('openclaw');
+  await svc.setMainModelConfig({ providerId: 'sensenova', model: 'deepseek-v4', reasoningLevel: 'high' });
+  assert.equal(await svc.getModel('openclaw'), agentModelBefore, '设置层「应用」不得改对话级当前模型');
+  await svc.setModel('openclaw', 'glm-5.3');
+  assert.equal((await svc.getMainModelConfig()).model, 'deepseek-v4', '对话级切换不得改设置层默认值');
+});
+
+test('13.18 辅助模型：8 行固定、指定/重置/全重置、同源校验', async () => {
+  const svc = makeFast();
+  const rows = await svc.listAuxModels();
+  assert.deepEqual(rows.map((r) => r.taskId),
+    ['vision', 'compaction', 'skills', 'approvals', 'mcp', 'title-gen', 'review', 'maintainer']);
+  assert.deepEqual(rows.map((r) => r.label),
+    ['视觉', '压缩', '技能中心', '审批', 'MCP', '标题生成', '评审', '维护器']);
+  assert.ok(rows.every((r) => r.boundModel === null), '种子应全部为「自动 · 使用主模型」');
+  // 指定：必须是当前主提供方的模型（同源）
+  const main = await svc.getMainModelConfig();
+  await svc.setAuxModel('vision', main.model);
+  let rows2 = await svc.listAuxModels();
+  assert.equal(rows2.find((r) => r.taskId === 'vision').boundModel, main.model);
+  // 其他提供方的模型 → 拒绝
+  const providers = await svc.listSettingsProviders();
+  const foreign = providers.find((p) => p.id !== main.providerId).models[0];
+  await assert.rejects(() => svc.setAuxModel('vision', foreign), /not offered by provider/);
+  // 单行重置 + 未知任务防呆
+  await svc.setAuxModel('vision', null);
+  assert.equal((await svc.listAuxModels()).find((r) => r.taskId === 'vision').boundModel, null);
+  await assert.rejects(() => svc.setAuxModel('nope', 'x'), /unknown aux task/);
+  // 全部重置
+  await svc.setAuxModel('mcp', main.model);
+  await svc.setAuxModel('review', main.model);
+  await svc.resetAllAuxModels();
+  assert.ok((await svc.listAuxModels()).every((r) => r.boundModel === null));
+});
+
+test('13.18 归档：恢复/删除都从列表移除；未知 id 防呆', async () => {
+  const svc = makeFast();
+  const seeds = await svc.listArchivedSessions();
+  assert.ok(seeds.length >= 3);
+  for (const s of seeds) assert.ok(s.id && s.title && s.agentId && Number.isFinite(s.archivedAt));
+  await svc.restoreArchivedSession(seeds[0].id);
+  await svc.deleteArchivedSessionForever(seeds[1].id);
+  const rest = await svc.listArchivedSessions();
+  assert.equal(rest.length, seeds.length - 2);
+  assert.ok(!rest.some((s) => s.id === seeds[0].id || s.id === seeds[1].id));
+  await assert.rejects(() => svc.restoreArchivedSession(seeds[0].id), /not found/);
+  await assert.rejects(() => svc.deleteArchivedSessionForever('nope'), /not found/);
+});
+
 test('__calls 记录全部调用方法名', async () => {
   const svc = makeFast();
   await svc.listAgents();
@@ -322,5 +408,15 @@ test('realAgentControlService：每方法都 throw not-wired-yet（骨架契约�
   await assert.rejects(() => realAgentControlService.transferTask({ sourceAgentId: 'hermes', targetAgentId: 'codex', includeConversation: true, includeFiles: true, includeTask: true }), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.listNotifications(), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.stopGeneration('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listSettingsSections(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listSettingsProviders(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getMainModelConfig(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.setMainModelConfig({ providerId: 'p', model: 'm', reasoningLevel: 'high' }), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listAuxModels(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.setAuxModel('t', null), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.resetAllAuxModels(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listArchivedSessions(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.restoreArchivedSession('x'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.deleteArchivedSessionForever('x'), /not-wired-yet/);
   assert.throws(() => realAgentControlService.onStatusChange(() => {}), /not-wired-yet/);
 });

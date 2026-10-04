@@ -21,17 +21,25 @@ import TaskPanel from '@/components/task/TaskPanel'
 import QueuePanel from '@/components/task/QueuePanel'
 import FilePanel from '@/components/files/FilePanel'
 import { ToastHost } from '@/components/ui/toast'
+import SettingsDialog from '@/components/settings/SettingsDialog'
 import SettingsModal from '@/components/settings/SettingsModal'
 import { useWorkbench } from '@/hooks/use-workbench'
-import type { TaskItem } from '@/services/agent-control-types'
+import type { SettingsSectionId, TaskItem } from '@/services/agent-control-types'
 
 export default function App() {
   const wb = useWorkbench()
   /*
-   * 设置弹窗开关：入口在侧栏左下「设置」行 / 用户菜单「使用情况」/ 顶栏 ⋯「关于」。
-   * 弹窗内部逻辑不动（打开时才拉数据，约束 7）。
+   * 设置中心（13.18）：SideBar 设置行 / 顶栏 ⋯ 关于 → 新 SettingsDialog（18 项导航）。
+   * 既有 SettingsModal（API 配置/用量/关于三组件，13.13 接受区）不动，保留
+   * 「用户菜单 → 使用情况」一个入口（真实用量数据只在其中）。
    */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('models')
+  const [apiSettingsOpen, setApiSettingsOpen] = useState<boolean>(false)
+  const openSettings = (s: SettingsSectionId = 'models') => {
+    setSettingsSection(s)
+    setSettingsOpen(true)
+  }
   const [view, setView] = useState<SideView>('chat')
 
   // Ctrl+N 新建会话（快捷键面板见顶栏 ⋯ → 快捷键；Ctrl+K 由 SideBar 自管聚焦）
@@ -68,7 +76,7 @@ export default function App() {
         }}
         onOpenView={(v) => setView(v)}
         onOpenLogs={() => void wb.openLogs()}
-        onOpenAbout={() => setSettingsOpen(true)}
+        onOpenAbout={() => openSettings('about')}
       />
       <div className="flex min-h-0 flex-1">
         <SideBar
@@ -81,7 +89,8 @@ export default function App() {
           onRenameSession={(id, title) => void wb.renameSession(id, title)}
           onDeleteSession={(id) => void wb.deleteSession(id)}
           onPinSession={(id) => void wb.toggleSessionPin(id)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettings('models')}
+          onOpenUsage={() => setApiSettingsOpen(true)}
         />
         {view === 'chat' ? (
           <Workbench wb={wb} />
@@ -94,7 +103,8 @@ export default function App() {
         )}
       </div>
       <ToastHost />
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialSection={settingsSection} agents={wb.agents} />
+      <SettingsModal open={apiSettingsOpen} onOpenChange={setApiSettingsOpen} />
     </div>
   )
 }

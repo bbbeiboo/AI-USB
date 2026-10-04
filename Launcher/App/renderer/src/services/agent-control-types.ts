@@ -127,6 +127,50 @@ export interface AppNotification {
   ts: number
 }
 
+// —— 设置中心（13.18 任务书 §四：先 stub 后接线，全部内存态）——————————————————
+/** 18 项导航 id（顺序固定，任务书 §二；UI 导航与搜索都以此为唯一清单） */
+export type SettingsSectionId =
+  | 'models' | 'chat' | 'appearance' | 'workspace' | 'security' | 'browser' | 'memory'
+  | 'voice' | 'advanced' | 'notifications' | 'billing' | 'providers' | 'gateway'
+  | 'hotkeys' | 'keys' | 'plugins' | 'archived' | 'about'
+
+/** 推理力度（「默认值 推理」下拉） */
+export type ReasoningLevel = 'low' | 'medium' | 'high'
+
+/**
+ * 主模型配置（应用于新会话）。与输入框内模型切换器是两层：
+ * 对话级临时切换走 setModel/getModel（13.16），这里只存「新会话默认值」，
+ * 二者互不影响（任务书 §3.1.4 双层隔离，有单测钉死）。
+ */
+export interface MainModelConfig {
+  providerId: string
+  model: string
+  reasoningLevel: ReasoningLevel
+}
+
+/** 提供方 + 该方模型清单（stub 复用 13.17 已有模型名，避免出现第二套名字） */
+export interface SettingsProvider {
+  id: string
+  name: string
+  models: string[]
+}
+
+/** 辅助模型绑定：boundModel = null 表示「自动 · 使用主模型」 */
+export interface AuxModelBinding {
+  taskId: string
+  label: string
+  hint: string
+  boundModel: string | null
+}
+
+/** 已归档对话（stub 演示数据；真实归档来源在接线轮确认） */
+export interface ArchivedSession {
+  id: string
+  agentId: string
+  title: string
+  archivedAt: number
+}
+
 export type StatusChangeHandler = (id: string, status: AgentStatus) => void
 export type OutputHandler = (id: string, entry: OutputEntry) => void
 
@@ -213,6 +257,25 @@ export interface AgentControlService {
 
   /** 停止当前生成（输入框 ↑→■；stub 落定流式条目，接线轮映射 agent:input 的 stop） */
   stopGeneration(id: string): Promise<void>
+
+  // —— 设置中心（13.18 任务书 §四；通道映射：settings:get/update、archive:list/restore/delete）——
+  /** 18 项导航 id，顺序固定（UI 导航/搜索的唯一清单） */
+  listSettingsSections(): Promise<SettingsSectionId[]>
+  /** 提供方 + 模型清单（stub 复用 13.17 模型名；接线轮来自 provider 缓存，单一数据源） */
+  listSettingsProviders(): Promise<SettingsProvider[]>
+  getMainModelConfig(): Promise<MainModelConfig>
+  /** 「应用」落点：校验 提供方存在 / 模型属于该方 / 推理枚举；不影响对话级 setModel */
+  setMainModelConfig(cfg: MainModelConfig): Promise<void>
+  /** 8 行辅助任务绑定（taskId/label/hint 固定，boundModel=null=自动·使用主模型） */
+  listAuxModels(): Promise<AuxModelBinding[]>
+  /** 指定辅助模型；model=null 重置为「自动 · 使用主模型」。模型取值与主模型下拉同源 */
+  setAuxModel(taskId: string, model: string | null): Promise<void>
+  /** 「全部重置为主模型」 */
+  resetAllAuxModels(): Promise<void>
+  listArchivedSessions(): Promise<ArchivedSession[]>
+  /** 从归档移除并回到会话列表（stub 仅移除+由 UI toast） */
+  restoreArchivedSession(id: string): Promise<void>
+  deleteArchivedSessionForever(id: string): Promise<void>
 
   onStatusChange(cb: StatusChangeHandler): () => void
   onOutput(cb: OutputHandler): () => void

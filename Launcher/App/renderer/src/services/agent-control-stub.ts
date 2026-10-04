@@ -20,12 +20,18 @@ import type {
   AgentStatus,
   AgentSummary,
   AppNotification,
+  ArchivedSession,
+  AuxModelBinding,
   CallRecord,
   FileItem,
+  MainModelConfig,
   OutputEntry,
   OutputHandler,
   QueueEntry,
+  ReasoningLevel,
   SessionMeta,
+  SettingsProvider,
+  SettingsSectionId,
   StatusChangeHandler,
   TaskItem,
   TransferPayload,
@@ -77,6 +83,34 @@ const STUB_RECOMMENDATIONS: Record<string, { agentId: string; reason: string; co
   codex: { agentId: 'claude-code', reason: '进入工程实现阶段，Claude Code 擅长代码工程', confidence: 0.86 },
   'claude-code': { agentId: 'openclaw', reason: '后续落地执行可交回 OpenClaw 形成闭环', confidence: 0.83 },
 }
+
+// ---- 13.18 设置中心种子（全部内存态；模型名复用 STUB_MODELS 已有名，单一数据源）----
+const SETTINGS_SECTIONS: SettingsSectionId[] = [
+  'models', 'chat', 'appearance', 'workspace', 'security', 'browser', 'memory',
+  'voice', 'advanced', 'notifications', 'billing', 'providers', 'gateway',
+  'hotkeys', 'keys', 'plugins', 'archived', 'about',
+]
+
+/** 提供方清单：模型名全部来自 13.17 的 STUB_MODELS（接线轮统一来自 provider 缓存） */
+const SETTINGS_PROVIDERS: SettingsProvider[] = [
+  { id: 'sensenova', name: 'SenseNova（stub）', models: ['glm-5.3', 'deepseek-v4', 'qwen 3.8 27B'] },
+  { id: 'siliconflow', name: 'SiliconFlow（stub）', models: ['hermes-4-405b', 'llama-4-maverick'] },
+  { id: 'openai', name: 'OpenAI（stub）', models: ['gpt-5.2-codex', 'o4-mini'] },
+  { id: 'anthropic', name: 'Anthropic（stub）', models: ['claude-sonnet-4.5', 'claude-opus-4.1', 'claude-haiku-4'] },
+]
+
+const REASONING_LEVELS: ReasoningLevel[] = ['low', 'medium', 'high']
+
+const AUX_SEEDS: Array<{ taskId: string; label: string; hint: string }> = [
+  { taskId: 'vision', label: '视觉', hint: '图片分析' },
+  { taskId: 'compaction', label: '压缩', hint: '上下文压缩' },
+  { taskId: 'skills', label: '技能中心', hint: '技能搜索' },
+  { taskId: 'approvals', label: '审批', hint: '智能自动批准' },
+  { taskId: 'mcp', label: 'MCP', hint: 'MCP 工具路由' },
+  { taskId: 'title-gen', label: '标题生成', hint: '会话标题' },
+  { taskId: 'review', label: '评审', hint: '/review 评审子智能体' },
+  { taskId: 'maintainer', label: '维护器', hint: '技能使用审查' },
+]
 
 export function createStubAgentControlService(opts: StubOptions = {}): AgentControlService & { __calls: CallRecord[] } {
   const startDelay = opts.startDelayMs ?? 800
@@ -132,6 +166,15 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
   let taskSeq = 0
   /** 生成代数：stopGeneration 自增使进行中的 sendInput 中途退出（stub 单生成流假设） */
   let genSeq = 0
+
+  // ---- 13.18 设置中心内存态（不落盘、不写 providers.json）----
+  let mainModelConfig: MainModelConfig = { providerId: 'sensenova', model: 'glm-5.3', reasoningLevel: 'high' }
+  let auxBindings: AuxModelBinding[] = AUX_SEEDS.map((s) => ({ ...s, boundModel: null }))
+  const archived: ArchivedSession[] = [
+    { id: 'arch-seed-1', agentId: 'openclaw', title: '旧版依赖排查', archivedAt: seedNow - 3 * 86_400_000 },
+    { id: 'arch-seed-2', agentId: 'hermes', title: '市场竞品速览', archivedAt: seedNow - 7 * 86_400_000 },
+    { id: 'arch-seed-3', agentId: 'codex', title: '脚本重构草案', archivedAt: seedNow - 14 * 86_400_000 },
+  ]
 
   function record(method: string, ...args: unknown[]) {
     calls.push({ method, args, ts: Date.now() })
@@ -458,6 +501,64 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     // 自增代数即可：进行中的 sendInput 在下一个轮询片发现 gen 过期，自行落定
     genSeq++
   }
+
+  // ---- 13.18 设置中心 --------------------------------------------------------
+  async function listSettingsSections(): Promise<SettingsSectionId[]> {
+    record('listSettingsSections')
+    return [...SETTINGS_SECTIONS]
+  }
+  async function listSettingsProviders(): Promise<SettingsProvider[]> {
+    record('listSettingsProviders')
+    return SETTINGS_PROVIDERS.map((p) => ({ ...p, models: [...p.models] }))
+  }
+  async function getMainModelConfig(): Promise<MainModelConfig> {
+    record('getMainModelConfig')
+    return { ...mainModelConfig }
+  }
+  async function setMainModelConfig(cfg: MainModelConfig): Promise<void> {
+    record('setMainModelConfig', cfg)
+    const provider = SETTINGS_PROVIDERS.find((p) => p.id === cfg.providerId)
+    if (!provider) throw new Error(`stub: unknown provider ${cfg.providerId}`)
+    if (!provider.models.includes(cfg.model)) throw new Error(`stub: model ${cfg.model} not in provider ${cfg.providerId}`)
+    if (!REASONING_LEVELS.includes(cfg.reasoningLevel)) throw new Error(`stub: unknown reasoning level ${cfg.reasoningLevel}`)
+    // 只写设置层内存态——绝不触碰对话级 currentModel（双层隔离，单测钉死）
+    mainModelConfig = { ...cfg }
+  }
+  async function listAuxModels(): Promise<AuxModelBinding[]> {
+    record('listAuxModels')
+    return auxBindings.map((b) => ({ ...b }))
+  }
+  async function setAuxModel(taskId: string, model: string | null): Promise<void> {
+    record('setAuxModel', taskId, model)
+    const binding = auxBindings.find((b) => b.taskId === taskId)
+    if (!binding) throw new Error(`stub: unknown aux task ${taskId}`)
+    if (model !== null) {
+      // 「与主模型同源」：取值域 = 当前主提供方的模型清单
+      const provider = SETTINGS_PROVIDERS.find((p) => p.id === mainModelConfig.providerId)
+      if (!provider?.models.includes(model)) throw new Error(`stub: model ${model} not offered by provider ${mainModelConfig.providerId}`)
+    }
+    binding.boundModel = model
+  }
+  async function resetAllAuxModels(): Promise<void> {
+    record('resetAllAuxModels')
+    for (const b of auxBindings) b.boundModel = null
+  }
+  async function listArchivedSessions(): Promise<ArchivedSession[]> {
+    record('listArchivedSessions')
+    return [...archived]
+  }
+  async function restoreArchivedSession(id: string): Promise<void> {
+    record('restoreArchivedSession', id)
+    const i = archived.findIndex((s) => s.id === id)
+    if (i < 0) throw new Error(`stub: archived session ${id} not found`)
+    archived.splice(i, 1)
+  }
+  async function deleteArchivedSessionForever(id: string): Promise<void> {
+    record('deleteArchivedSessionForever', id)
+    const i = archived.findIndex((s) => s.id === id)
+    if (i < 0) throw new Error(`stub: archived session ${id} not found`)
+    archived.splice(i, 1)
+  }
   function onStatusChange(cb: StatusChangeHandler): () => void {
     statusCbs.add(cb)
     return () => statusCbs.delete(cb)
@@ -492,6 +593,9 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     openLogs, pinAgent, listModels, getModel, setModel,
     listTasks, listQueue, listFiles,
     getRecommendation, transferTask, listNotifications, stopGeneration,
+    listSettingsSections, listSettingsProviders, getMainModelConfig, setMainModelConfig,
+    listAuxModels, setAuxModel, resetAllAuxModels,
+    listArchivedSessions, restoreArchivedSession, deleteArchivedSessionForever,
     onStatusChange, onOutput,
     __calls: calls,
   }

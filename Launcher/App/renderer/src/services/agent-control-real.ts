@@ -28,6 +28,9 @@
  * | transferTask          | 需新增 agent:transfer（写操作，含附带内容载荷） | 无 |
  * | listNotifications     | 需新增 task:events（完成/转交/文件/队列事件流） | 无 |
  * | stopGeneration        | 需新增 agent:input 的 stop 语义（或 agent:abort） | 无 |
+ * | listSettingsSections/listSettingsProviders/getMainModelConfig/listAuxModels/listArchivedSessions | 需新增 settings:get | 无 |
+ * | setMainModelConfig/setAuxModel/resetAllAuxModels | 需新增 settings:update（写 provider 缓存） | 无 |
+ * | restoreArchivedSession/deleteArchivedSessionForever | 需新增 archive:restore / archive:delete | 无 |
  *
  * 会话/输出类通道依赖「Agent 会话数据源」的裁决（Agent TUI 的会话持久化位置），
  * 下一轮接线前需先与用户确认数据来源，不在本轮范围。
@@ -68,6 +71,16 @@ export const realAgentControlService: AgentControlService = {
   async transferTask() { notWired('transferTask') },
   async listNotifications() { notWired('listNotifications') },
   async stopGeneration() { notWired('stopGeneration') },
+  async listSettingsSections() { notWired('listSettingsSections') },
+  async listSettingsProviders() { notWired('listSettingsProviders') },
+  async getMainModelConfig() { notWired('getMainModelConfig') },
+  async setMainModelConfig() { notWired('setMainModelConfig') },
+  async listAuxModels() { notWired('listAuxModels') },
+  async setAuxModel() { notWired('setAuxModel') },
+  async resetAllAuxModels() { notWired('resetAllAuxModels') },
+  async listArchivedSessions() { notWired('listArchivedSessions') },
+  async restoreArchivedSession() { notWired('restoreArchivedSession') },
+  async deleteArchivedSessionForever() { notWired('deleteArchivedSessionForever') },
   onStatusChange() { notWired('onStatusChange') },
   onOutput() { notWired('onOutput') },
 }

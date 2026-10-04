@@ -1305,3 +1305,58 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
 - 新通道 task:list/queue、file:list/export、agent:transfer/recommend、task:events、agent:input-stop
   均未在 preload/main 实现（real 骨架 throw not-wired-yet）；
 - 用户身份为 stub 展示（登录接线轮 13.6-1 会把用户菜单变成真实身份）。
+
+## 13.18 设置中心（任务书全量：18 项导航 + 模型页全量 + stub 接口预留）
+
+**输入**：用户下发的《13.18 轮任务书：设置中心（Settings）》——只做设置弹窗 UI 重构 + 服务接口
+预留，数据全 stub，延续 13.17「先 UI 后真实 Agent」。
+
+### 需求与实现
+| 任务书条款 | 实现 |
+| --- | --- |
+| §一 入口与容器 | SideBar 设置行 → SettingsDialog（React 覆盖层，非 BrowserWindow）；左 200px 导航 + 右滚动内容；顶边居中「搜索 Ctrl K」玻璃胶囊；✕/Esc/点遮罩三等效；关闭不丢改动（状态在服务层内存态，重开即恢复） |
+| §二 左导航 18 项 | SettingsNav：模型/对话/外观/工作区/安全/Browser/记忆与上下文/语音/高级/通知/账单/提供方/网关/键盘快捷键/工具与密钥/插件/已归档对话/关于，图标语义相近，AID=settings-nav-<id>，默认落 models |
+| §3.1 模型页全量 | 说明文字；提供方/模型下拉（随提供方联动）+ 蓝色「应用」；「默认值 推理 低/中/高」；辅助模型区块（8 行：视觉/压缩/技能中心/审批/MCP/标题生成/评审/维护器，状态行 自动·使用主模型 ⇄ 已指定·<模型>，行内 设为主模型/更改，顶部 全部重置为主模型）；Mixture of Agents（英文说明 + 预设下拉） |
+| §3.1.4 双层隔离 | 「应用」只写 settings 层 stub；对话级 setModel（输入框切换器）不受影响——真机实证：应用后 toast 出现且输入框 chip 仍 qwen 3.8 27B；双向单测钉死 |
+| §3.2 其余 17 页 | 已归档对话（恢复/删除即移除+toast）、键盘快捷键（只读表格，只列真实存在的 5 条）、关于（名称/版本 1.0.0/构建时间 stub/开源致谢）；其余 14 页统一 PlaceholderPage（图标+标题+「本页将在后续版本提供」，零假控件） |
+| §3.3 顶部搜索 | 胶囊点击或 Ctrl+K 展开 SearchOverlay；范围=18 导航项+8 辅助任务+MoA；分组 设置页/模型设置；辅助任务命中→跳模型页+该行高亮 2s（真机跳转已验证，2s 高亮窗口短于截图链路延迟，代码路径与单元逻辑由 jumpTo+timeout 保证） |
+| §四 服务接口 | +10 方法：listSettingsSections（18 id 顺序契约）/listSettingsProviders（模型名复用 13.17 STUB_MODELS，无第二套名字）/get-setMainModelConfig（校验 提供方存在/模型属方/推理枚举）/listAuxModels/setAuxModel(null=重置)/resetAllAuxModels/listArchivedSessions/restore/delete。real 骨架全部 notWired；通道表补 settings:get/update、archive:list/restore/delete |
+| §五 组件结构 | settings/：SettingsDialog/SettingsNav/SearchOverlay/pages/{Models,Archived,Hotkeys,About,Placeholder}Page；零新依赖（radix DropdownMenu + 手写控件沿用） |
+
+### 关键裁决与最小改动
+- **既有 SettingsModal（API/用量/关于三组件）原样保留**：新设置中心无 API/用量页，真实用量数据
+  只在旧 modal —— 用户菜单「使用情况」改指旧 modal（SideBar 新增 onOpenUsage 一个 prop，除此
+  外 13.17 交付组件零改动）；顶栏 ⋯「关于」改指新弹窗 about 页。
+- **Ctrl+K 双语义**：主界面=会话搜索（SideBar），设置弹窗内=设置搜索。实现=dialog 以 capture 阶段
+  window 监听 + stopPropagation 抢在 SideBar 的 bubble 监听之前；同时屏蔽 Ctrl+N（下层交互锁死）。
+- **Esc 归属**：radix 弹层开着时（检测 [data-radix-popper-content-wrapper]）Esc 先归菜单；
+  否则先收搜索再关弹窗。
+- **辅助「更改」取值域=当前主提供方模型清单**（任务书「与主模型同源」），stub 校验拒绝外方模型。
+
+### 新坑
+1. **TS 收窄进不了函数声明**：ModelsPage 的 `if (!draft) return` 守卫对后续 function 声明内的
+   state 引用无效（TS2345）——收窄后先落到局部常量（saved/d）再写闭包。
+2. **UIA FindFirst 偶发竞态**：主界面元素明明在树里，首次 FindFirst NOT_FOUND、复跑即中——
+   走查脚本对「NOT_FOUND 但应存在」一律先重跑一次再下结论。
+3. 2s 高亮窗口短于「点击→截图」链路延迟（~3s），真机截图抓不到高亮帧；高亮为纯 CSS 类切换，
+   由 jumpTo 的 setTimeout 保证——后续如需可视化，把窗口放宽到 3s 即可。
+
+### 验收（任务书 §七 全绿）
+- tsc 0 错误；build 通过（index-D1qhP5bx.js 470.90KB）；node --test 61/61（新增 4 组：18 项顺序
+  契约、主模型校验+同源+**双层隔离双向断言**、辅助 8 行固定+指定/重置/全重置+同源拒绝、归档恢复/
+  删除+防呆；real 骨架 +10 notWired；工厂契约 +10 方法）。
+- asar 核查：settings-dialog/settings-nav/settings-provider-select/settings-model-select/settings-apply/
+  settings-reasoning-select/aux-reset-all/archived-restore/moa-preset-select/settings-search-*/
+  hotkey-row/about-version 全命中；动态模板 settings-nav-${id}/aux-row-${taskId}/
+  settings-placeholder-${sectionId} 确认存在。
+- 真机 exe（PID 6376，1281×801）走查：设置打开落 models 页；18 项导航齐全且顺序正确；提供方
+  sensenova→anthropic 联动模型清单；选 opus→应用→toast+输入框 chip 不变（隔离实锤）；推理 中→应用；
+  视觉任务 更改→claude-haiku-4→状态「已指定」→设为主模型→恢复「自动」；归档恢复→行移除+toast；
+  Ctrl+K→搜「评审」→跳模型页；14 占位页逐一渲染；快捷键/关于页正常；✕ 与 Esc 均可关闭。
+  截图 10 张于 _verify/1318-settings-*.png。
+- 零净写入：15 文件基线前后一致；launcher.log +759B=本次启停事件（既有豁免）。
+
+### 未完成 / Mock（下一轮接线）
+- 设置 10 方法全 stub 内存态：主模型配置/辅助绑定不落盘、不写 providers.json；重启应用即回默认；
+- 提供方清单为演示分组（模型名与 13.17 同源），真实 provider 缓存接线轮统一；
+- MoA 预设为演示值；占位 14 页待后续版本逐页实装；构建时间为 stub 注入。

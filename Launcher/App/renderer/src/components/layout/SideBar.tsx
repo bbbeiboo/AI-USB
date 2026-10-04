@@ -30,6 +30,8 @@ interface Props {
   onDeleteSession: (id: string) => void
   onPinSession: (id: string) => void
   onOpenSettings: () => void
+  /** 13.18：用户菜单「使用情况」→ 既有用量弹窗（新设置中心不含用量页） */
+  onOpenUsage: () => void
 }
 
 const NAV: Array<{ id: SideView; label: string; icon: typeof MessageSquare }> = [
@@ -40,7 +42,7 @@ const NAV: Array<{ id: SideView; label: string; icon: typeof MessageSquare }> = 
 ]
 
 export default function SideBar({
-  view, sessions, sessionId, onSwitchView, onNewSession, onSwitchSession, onRenameSession, onDeleteSession, onPinSession, onOpenSettings,
+  view, sessions, sessionId, onSwitchView, onNewSession, onSwitchSession, onRenameSession, onDeleteSession, onPinSession, onOpenSettings, onOpenUsage,
 }: Props) {
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -235,7 +237,7 @@ export default function SideBar({
           <PopoverContent align="start" side="top" className="w-44 p-1.5">
             <UserMenuItem id="user-menu-profile" label="个人资料" onClick={() => toast('个人资料（stub：登录接线后提供真实身份）')} />
             <UserMenuItem id="user-menu-account" label="账户" onClick={() => toast('账户（stub：登录接线后提供）')} />
-            <UserMenuItem id="user-menu-usage" label="使用情况" onClick={onOpenSettings} />
+            <UserMenuItem id="user-menu-usage" label="使用情况" onClick={onOpenUsage} />
             <UserMenuItem id="user-menu-logout" label="退出登录" onClick={() => toast('退出登录（stub：登录接线后可用）')} />
           </PopoverContent>
         </Popover>

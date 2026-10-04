@@ -1407,6 +1407,171 @@ if (!gotLock) {
   app.on('window-all-closed', () => { log('Event=Window All Closed (tray mode, no auto quit)'); /* tray keeps app alive */ });
 }
 
+// --- 13.22: Hermes ACP 会话桥（真实会话接线）---------------------------------
+// 架构裁决：Hermes 原生会话（state.db）= Source of Truth；聚合器只维护索引
+// （Launcher/Data/session-index.json）并经官方 ACP 通道驱动真实会话。
+// 通道优先级（任务书 §六）：ACP（官方 API）→ CLI → 数据文件；本桥只用 ACP + 官方 CLI。
+const { createHermesAcpGateway } = require('./hermes-acp-gateway');
+const { createSessionIndex } = require('./session-index');
+
+const hermesAcpCommand = () => path.join(ROOT, 'Agents', 'Hermes', 'bin', 'hermes-acp.exe');
+const hermesHomeDir = () => path.join(ROOT, 'Agents', 'Hermes');
+const sessionIndexFile = () => path.join(ROOT, 'Launcher', 'Data', 'session-index.json');
+const sessionIndex = createSessionIndex({ filePath: sessionIndexFile(), log: (m) => log('session-index ' + m) });
+
+let hermesGateway = null;
+let hermesGatewayEnvBuilt = false;
+
+/**
+ * 组装 hermes-acp 子进程环境（复用 launchAgent 的既有注入链；本函数不读密钥值内容，
+ * 只把 main 进程已解出的 env 传给子进程——密钥零接触边界不变）。
+ * providers.json（bundled）优先，DPAPI 用户配置兜底；两者皆缺 → 空 env，
+ * session/new 将以 provider-auth 诚实报错（不伪造成功）。
+ */
+async function hermesAcpEnv() {
+  const env = {};
+  const bundled = buildBundledProviderEnv('hermes');
+  if (bundled) {
+    Object.assign(env, bundled.env);
+    if (bundled.model && bundled.model.baseUrl && bundled.model.model) {
+      try { syncHermesModelConfig(bundled.model.baseUrl, bundled.model.model); } catch (e) { log('Agent=hermes Action=SyncConfig Result=FAIL source=acp reason=' + safe(e)); }
+    }
+    return env;
+  }
+  if (typeof hasSecret === 'function' && hasSecret('hermes')) {
+    const cfg = loadUserConfig();
+    const aCfg = cfg.agents['hermes'] || {};
+    if (aCfg.baseUrl && aCfg.model) {
+      try {
+        const plain = await loadSecretPlain('hermes');
+        if (plain) {
+          env.HERMES_LAUNCHER_API_KEY = plain;
+          try { syncHermesModelConfig(aCfg.baseUrl, aCfg.model); } catch (e) { log('Agent=hermes Action=SyncConfig Result=FAIL source=acp-user reason=' + safe(e)); }
+        }
+      } catch (e) { log('Agent=hermes Action=Env Result=FAIL source=acp reason=' + safe(e)); }
+    }
+  }
+  return env;
+}
+
+async function getHermesGateway() {
+  if (hermesGateway) return hermesGateway;
+  const env = hermesGatewayEnvBuilt ? {} : await hermesAcpEnv();
+  hermesGatewayEnvBuilt = true;
+  hermesGateway = createHermesAcpGateway({
+    command: hermesAcpCommand(),
+    hermesHome: hermesHomeDir(),
+    env,
+    log: (m) => log('Agent=hermes Surface=acp ' + m),
+  });
+  log('Agent=hermes Action=AcpGateway Created envKeys=' + Object.keys(env).join(','));
+  return hermesGateway;
+}
+
+function pushHermesEvent(payload) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    try { if (!w.isDestroyed()) w.webContents.send('hermes:session:event', payload); } catch (_) {}
+  }
+}
+
+// 会话列表：官方 session/list → 索引同步（Native → Index；orphan 检测在索引内）
+ipcMain.handle('hermes:session:list', async () => {
+  try {
+    const gw = await getHermesGateway();
+    const natives = await gw.listSessions();
+    const rows = sessionIndex.sync('hermes', natives);
+    return { ok: true, sessions: rows };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 新建会话：官方 session/new → 索引单条登记（不触发 orphan 扫描）
+ipcMain.handle('hermes:session:create', async (_e, params) => {
+  try {
+    const gw = await getHermesGateway();
+    const s = await gw.createSession({ cwd: hermesHomeDir() });
+    sessionIndex.upsert('hermes', s.nativeSessionId, { title: (params && params.title) || '' });
+    return { ok: true, session: s };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 打开会话：官方 session/load（历史经原生事件重放返回，不读 state.db）
+ipcMain.handle('hermes:session:open', async (_e, nativeSessionId) => {
+  try {
+    const gw = await getHermesGateway();
+    const r = await gw.loadSession(String(nativeSessionId));
+    return { ok: true, session: r, history: r.history || [] };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 发送：官方 session/prompt（阻塞到回合结束，过程经 session/update 流式推送）
+ipcMain.handle('hermes:session:send', async (_e, payload) => {
+  const nativeSessionId = String((payload && payload.nativeSessionId) || '');
+  const text = String((payload && payload.text) || '');
+  try {
+    const gw = await getHermesGateway();
+    let preview = '';
+    for await (const ev of gw.streamMessage(nativeSessionId, text)) {
+      pushHermesEvent({ nativeSessionId, event: ev });
+      if (ev.type === 'text_delta') preview += ev.text;
+      if (ev.type === 'session_info' && ev.title) sessionIndex.update('hermes', nativeSessionId, { title: ev.title });
+    }
+    if (preview) sessionIndex.update('hermes', nativeSessionId, { lastMessagePreview: preview.slice(-200), orphaned: false });
+    return { ok: true };
+  } catch (e) {
+    // 真实失败必须让 UI 看到回合终止（任务书 §十四：禁止失败后显示「任务完成」）
+    pushHermesEvent({ nativeSessionId, event: { type: 'error', message: safe(e), code: e.code || 'protocol' } });
+    return { ok: false, error: safe(e), code: e.code || 'protocol' };
+  }
+});
+
+// 停止：官方 session/cancel（回合已自然结束时 cancel 报错，按「已停止」处理不伪造失败）
+ipcMain.handle('hermes:session:stop', async (_e, nativeSessionId) => {
+  try {
+    const gw = await getHermesGateway();
+    await gw.stopGeneration(String(nativeSessionId));
+    return { ok: true };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 索引元数据（置顶/展示名/归档）——只写索引，不触原生数据
+ipcMain.handle('hermes:index:update', (_e, payload) => {
+  try {
+    const { nativeSessionId, patch } = payload || {};
+    const r = sessionIndex.update('hermes', String(nativeSessionId), patch || {});
+    return { ok: !!r, entry: r };
+  } catch (e) { return { ok: false, error: safe(e) }; }
+});
+ipcMain.handle('hermes:index:remove', (_e, nativeSessionId) => {
+  try { return { ok: sessionIndex.remove('hermes', String(nativeSessionId)) }; }
+  catch (e) { return { ok: false, error: safe(e) }; }
+});
+
+// 删除原生会话：官方 CLI（hermes sessions delete <id> --yes；state.db 官方删除途径）。
+// 破坏性操作，UI 侧已二次确认；成功后同步移除索引条目。
+ipcMain.handle('hermes:session:delete', async (_e, nativeSessionId) => {
+  const id = String(nativeSessionId || '');
+  try {
+    const hermesExe = path.join(ROOT, 'Agents', 'Hermes', 'bin', 'hermes.exe');
+    await new Promise((resolve, reject) => {
+      const { spawn: spawnProc } = require('child_process');
+      const p = spawnProc(hermesExe, ['sessions', 'delete', id, '--yes'], {
+        cwd: hermesHomeDir(),
+        env: { ...process.env, HERMES_HOME: hermesHomeDir() },
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error('hermes sessions delete exit=' + code))));
+      p.on('error', reject);
+    });
+    sessionIndex.remove('hermes', id);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+app.on('before-quit', () => {
+  try { if (hermesGateway) { hermesGateway.close(); hermesGateway = null; } } catch (_) {}
+});
+
 // --- Exports for the standalone test scripts (Launcher/App/*_test.cjs) -------
 // The Electron entry point itself never reads module.exports. Exposing the real
 // functions lets the BOM/config tests exercise this exact code (with a stubbed

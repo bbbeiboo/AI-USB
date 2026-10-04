@@ -1448,3 +1448,44 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
 ### 未完成（仍待用户裁决/后续版本）
 - 真接线轮核心（agent:sessions/output/input、settings:native 写真实配置、credential:* 系统安全存储、update:check 动态探测）——依赖「Agent 会话数据源」用户裁决；密钥零接触与零净写入在此轮才需要重新设计基线。
 - 登录接线 / 主题切换 / 14 页字段编辑能力（当前只读预览）。
+
+## 13.22 会话真源裁决 + Hermes 真实接线（任务书全量）
+
+### 架构裁决（用户 13.22 任务书 §一）
+**Agent 原生会话数据 = Source of Truth**；聚合器只做索引（Launcher/Data/session-index.json），
+不复制消息历史、不重新实现会话存储。四 Agent 各自保留原生 Session/Message/Context/Memory。
+
+### 需求与实现
+| 任务书要求 | 实现 |
+| --- | --- |
+| §五/§七 调查 | docs/AGENT-SESSION-SOURCES.md：四 Agent 会话真源/官方通道/缺口全表（Hermes=本地官方源码深挖 8 题；OpenClaw/Codex/Claude Code=官方文档+仓库；含 HERMES_HOME 内容 8 类分类） |
+| §三/§四/§九 统一接口 | agent-control-types.ts +AgentSession（双 ID：nativeSessionId=真源键，聚合器不造 UUID）/AgentSessionStatus/AgentEvent（含 user_message/session_info 扩展）/AgentError（8 错误码）/AgentSessionAdapter（一次定死；loadSession 返回官方重放 history） |
+| §八/§十 先接 Hermes | Launcher/App/hermes-acp-gateway.js（CJS 纯模块）：官方 ACP stdio 通道（hermes-acp.exe，v0.21.4 实测 initialize/session/list/session/new/session/load/session/prompt/session/cancel）；事件翻译（text_delta/thinking/tool/tool_result/user_message/session_info）；客户端请求处理（request_permission 默认 deny、fs/read 实现、fs/write 明示不支持） |
+| §二/§十一/§十二 索引 | Launcher/App/session-index.js：sync（Native→Index + orphan 检测，不伪造）/upsert/update/remove；titleSource=user 保护用户改名不被原生自动标题覆盖 |
+| 主进程桥 | main.js +hermes:session:list/create/open/send/stop/delete + hermes:index:update/remove + 事件推送（webContents.send）；env 复用既有 DPAPI/providers.json 注入链（密钥零接触）；before-quit 关网关；删除走官方 CLI hermes sessions delete |
+| §八 禁止 stub 假链路 | renderer agent-control-hybrid.ts：工厂检测 preload 桥 → 混合服务（hermes 真实 + 其余 stub）；非 hermes 全委托 inner（不越权）；真实错误按 AgentError.code 上抛 |
+| §十八 测试 | tests/hermes-session.test.js（9：mock ACP server 全链路 + 错误映射 + 索引 sync/orphan/titleSource）+ tests/hybrid-service.test.js（8：双 ID 契约/事件渲染/历史重放/错误传播/停止删除置顶改名走真实通道）→ **全套 97/97**（80 旧不降） |
+
+### 关键实测（真机，PID 8904/22692）
+- **真实发送**：UI 发消息 → ACP session/prompt → 真实 API（agnes-2.5-flash）→ **Agent 真执行**（terminal git status、skill_view hermes-agent 工具真实运行）→ 真实回复渲染。
+- **真实流式**：💭 thinking / 🔧 tool_start/tool_result / text_delta 打字机 / session_info 自动标题（"."→"Greeting session"）全部经 session/update 实时渲染进 MessageList。
+- **重启恢复**：关应用→重启→切 Hermes：侧栏列出真实原生会话（真源在 state.db），选中后**历史经官方 session/load 重放**（用户消息+思考+回复完整回填）——不解析私有存储。
+- **索引落盘**：session-index.json 记录 uuid4 原生 ID/标题/预览，无聚合器 UUID。
+- **真实停止**：通道已接（session/cancel + UI ■ 按钮联动 + 单测覆盖）；真机自动化测试因用户正在实机操作而留给用户直接体验（诚实记录）。
+
+### 官方边界（如实记录，不伪造）
+1. ACP load/list 仅覆盖 source='acp' 会话（uuid4）——TUI 会话主权归 TUI（session.py:428）。
+2. cancel 后 interrupted_prompt_text 会拼入下一条 prompt（server.py:701）——UI 应提示。
+3. 权限请求本轮默认拒绝（无审批 UI）；fs/write 明示不支持；OpenClaw 无重命名 RPC（索引 displayName 补位）；Codex mcp-server 已被官方移除（13.20 矩阵条目作废，改 app-server）；Claude Code 删除无官方接口。
+4. Codex app-server 方法名有版本偏移（thread/new vs thread/start）——接线前须对 0.156.1 实测抓包。
+
+### 新坑
+- ACP session/load 必须带 mcpServers（缺则 Invalid params）；方法参数 camelCase（sessionId/mcpServers）。
+- electron-builder 打包白名单在 Launcher/App/package.json build.files——新增主进程模块必须登记（本轮 hermes-acp-gateway.js/session-index.js 首次打包遗漏，asar 根目录核查抓出）。
+- 根 package.json "type":"module" → tests/*.js 是 ESM（import 语法）；__dirname 需 fileURLToPath；CJS 工具模块放 Launcher/App/ 侧（无 type 声明）。
+- spawn .cjs 文本文件在 Windows 报 EFTYPE——须经 process.execPath 包一层。
+- UIA 对 radix 覆盖层极度不稳定（0×0 矩形/弹层不入树/行点击失效）——验收以「截图读坐标→窗口相对坐标点击」为可靠路径。
+- 子代理并发 ≥3 仍会超限失败（本轮 Codex 调查两次被吞）；失败后串行重发。
+
+### 零净写入
+14 文件基线：13 文件一致；config.yaml 差异 = Launcher 既有启动同步（Phase 11 起 syncHermesModelConfig 按 providers.json 重写 model 块，.bak 留存旧值；本轮 pre 基线恰好取在旧值状态），非 13.22 新增写入；app.db 差异 = 运行中锁定哈希跳过（关后复测一致）。新增合法写入：session-index.json（任务书 §二 明确授权的索引）+ Hermes 自己的 state.db（真源，Agent 主权数据）。

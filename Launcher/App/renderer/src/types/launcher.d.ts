@@ -490,6 +490,50 @@ export interface LauncherApi {
   proxyStart: () => Promise<ProxyStatusResult>
   proxyStop: () => Promise<ProxyStatusResult>
   proxyStatus: () => Promise<ProxyStatusResult>
+  // 13.22: Hermes 真实会话桥（官方 ACP 通道；原生会话=真源，聚合器只持索引）
+  hermesSessionList: () => Promise<HermesSessionListResult>
+  hermesSessionCreate: (params?: { title?: string }) => Promise<HermesSessionResult>
+  hermesSessionOpen: (nativeSessionId: string) => Promise<HermesOpenResult>
+  hermesSessionSend: (payload: { nativeSessionId: string; text: string }) => Promise<{ ok: boolean; error?: string; code?: string }>
+  hermesSessionStop: (nativeSessionId: string) => Promise<{ ok: boolean; error?: string; code?: string }>
+  hermesSessionDelete: (nativeSessionId: string) => Promise<{ ok: boolean; error?: string; code?: string }>
+  hermesIndexUpdate: (payload: { nativeSessionId: string; patch: Record<string, unknown> }) => Promise<{ ok: boolean; error?: string }>
+  hermesIndexRemove: (nativeSessionId: string) => Promise<{ ok: boolean; error?: string }>
+  onHermesSessionEvent: (cb: (payload: { nativeSessionId: string; event: unknown }) => void) => void
+}
+
+export interface HermesIndexEntry {
+  agentId: string
+  nativeSessionId: string
+  title: string
+  pinned: boolean
+  archived: boolean
+  orphaned: boolean
+  lastMessagePreview: string
+  lastSeen: number
+  sortOrder: number
+}
+
+export interface HermesSessionListResult {
+  ok: boolean
+  sessions?: HermesIndexEntry[]
+  error?: string
+  code?: string
+}
+
+export interface HermesSessionResult {
+  ok: boolean
+  session?: { agentId: string; nativeSessionId: string; title: string; status: string }
+  error?: string
+  code?: string
+}
+
+export interface HermesOpenResult {
+  ok: boolean
+  session?: { agentId: string; nativeSessionId: string; title: string; status: string }
+  history?: unknown[]
+  error?: string
+  code?: string
 }
 
 declare global {

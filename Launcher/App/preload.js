@@ -48,4 +48,14 @@ contextBridge.exposeInMainWorld('launcher', {
   proxyStart: () => ipcRenderer.invoke('proxy:start'),
   proxyStop: () => ipcRenderer.invoke('proxy:stop'),
   proxyStatus: () => ipcRenderer.invoke('proxy:status'),
+  // 13.22: Hermes 真实会话桥（官方 ACP 通道；架构裁决=原生会话为真源，聚合器只持索引）
+  hermesSessionList: () => ipcRenderer.invoke('hermes:session:list'),
+  hermesSessionCreate: (params) => ipcRenderer.invoke('hermes:session:create', params),
+  hermesSessionOpen: (nativeSessionId) => ipcRenderer.invoke('hermes:session:open', nativeSessionId),
+  hermesSessionSend: (payload) => ipcRenderer.invoke('hermes:session:send', payload),
+  hermesSessionStop: (nativeSessionId) => ipcRenderer.invoke('hermes:session:stop', nativeSessionId),
+  hermesSessionDelete: (nativeSessionId) => ipcRenderer.invoke('hermes:session:delete', nativeSessionId),
+  hermesIndexUpdate: (payload) => ipcRenderer.invoke('hermes:index:update', payload),
+  hermesIndexRemove: (nativeSessionId) => ipcRenderer.invoke('hermes:index:remove', nativeSessionId),
+  onHermesSessionEvent: (cb) => ipcRenderer.on('hermes:session:event', (_e, payload) => cb(payload)),
 });

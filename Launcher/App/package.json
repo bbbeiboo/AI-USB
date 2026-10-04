@@ -49,6 +49,8 @@
       "usage-proxy.js",
       "agent-process-manager.js",
       "json-util.js",
+      "hermes-acp-gateway.js",
+      "session-index.js",
       "auth-service.js",
       "ipc-auth.js",
       "renderer/dist/**/*"

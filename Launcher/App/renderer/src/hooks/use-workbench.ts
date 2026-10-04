@@ -45,6 +45,13 @@ export function useWorkbench() {
       setSessions(ss)
       const target = preferId && ss.some((s) => s.id === preferId) ? preferId : ss[0]?.id ?? null
       setSessionId(target)
+      // 13.22：真实会话的历史经官方 load 重放进输出区（stub 的 switchSession 是廉价
+      // 指针操作，此调用对 stub 无副作用；真实侧触发 session/load 历史重放）。
+      if (target) {
+        try {
+          await svc.switchSession(agentId, target)
+        } catch { /* 打开失败在事件流里已显式报错，不阻塞会话加载 */ }
+      }
       setOutput(await svc.getOutput(agentId))
       setModelState(await svc.getModel(agentId))
       setModels(await svc.listModels(agentId))

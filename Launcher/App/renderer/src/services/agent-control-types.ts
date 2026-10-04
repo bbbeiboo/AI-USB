@@ -34,6 +34,13 @@ export interface SessionMeta {
   updatedAt: number
   /** 会话级置顶（13.16 对标 Cherry Studio/LobeChat：置顶会话排在列表最前） */
   pinned: boolean
+  /**
+   * 13.22：Agent 原生会话 ID（真源键）。stub 会话无此字段；
+   * 真实会话（hermes）必填且 = Agent 原生 ID，绝不以聚合器 id 冒充。
+   */
+  nativeSessionId?: string
+  /** 13.22：索引指向的原生会话已不存在（同步时检测，不自动制造假会话） */
+  orphaned?: boolean
 }
 
 export type OutputKind = 'user' | 'agent' | 'system'
@@ -243,6 +250,93 @@ export interface ExportedSettings {
   filename: string
   /** JSON 字符串；仅含非 Secret 字段（secret=true 的项导出时剔除） */
   content: string
+}
+
+// —— 13.22 统一会话层（架构裁决：Agent 原生会话数据 = Source of Truth）—————————
+/**
+ * 架构裁决（13.22 §一/§二）：聚合器不重新实现 Agent 的会话存储——四个 Agent 各自
+ * 保留原生 Session/Message/Context/Memory；聚合器只经官方接口（API→SDK→IPC→CLI→文件
+ * 的优先级）统一读取/展示/发送/停止/切换/转交，并维护一份**索引**（Session Index）：
+ * 只存映射与 UI 元数据，绝不复制完整消息历史作为第二真源。
+ */
+
+/** 会话状态（generating/stopping 由聚合器运行时推导；orphaned=索引指向的原生会话已不存在） */
+export type AgentSessionStatus = 'active' | 'idle' | 'generating' | 'archived' | 'orphaned' | 'unknown'
+
+/**
+ * 统一会话对象。核心原则（任务书 §四）：
+ *   nativeSessionId = Agent 原生会话 ID（真源键），不得用聚合器 UUID 代替；
+ *   aggregatorId 仅为聚合器内部可选 ID；索引键 = agentId + '/' + nativeSessionId。
+ */
+export interface AgentSession {
+  agentId: string
+  aggregatorId?: string
+  nativeSessionId: string
+  title?: string
+  status: AgentSessionStatus
+  createdAt?: string
+  updatedAt?: string
+  // —— 聚合器索引元数据（只存这些，不存消息历史）——
+  pinned?: boolean
+  /** 最近一条消息预览（截断；仅索引缓存，真源在 Agent 侧） */
+  lastMessagePreview?: string
+}
+
+/**
+ * 统一 Agent 事件流（任务书 §九）。实际事件以各 Agent 原生事件能力为准——
+ * Adapter 只翻译存在的事件，不得伪造不存在的类型（如 Hermes 无的事件不得制造）。
+ */
+export type AgentEvent =
+  | { type: 'message_start' }
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_start'; name: string; input?: unknown }
+  | { type: 'tool_result'; name: string; summary?: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'file'; path: string; action: string }
+  | { type: 'error'; message: string; code?: string }
+  | { type: 'message_end'; stopReason?: string }
+  /** 会话元信息更新（Hermes session_info_update：自动标题生成后推送） */
+  | { type: 'session_info'; title: string }
+  /** 历史重放中的用户消息（Hermes session/load 重放 user_message_chunk；仅回放产生） */
+  | { type: 'user_message'; text: string }
+
+/** 统一错误（任务书 §十四：真实失败必须原样传递，禁止失败后报「任务完成」） */
+export interface AgentError extends Error {
+  /** offline | provider-auth | session-not-found | permission | timeout | busy | unsupported | protocol */
+  code: 'offline' | 'provider-auth' | 'session-not-found' | 'permission' | 'timeout' | 'busy' | 'unsupported' | 'protocol'
+  agentId?: string
+}
+
+/**
+ * 统一会话 Adapter（任务书 §三：接口按四 Agent 官方能力调整后一次定死）。
+ * 每个 Agent 一个实现；官方接口缺失的操作实现必须 throw AgentError(code='unsupported')，
+ * 不得伪造成功。Hermes 官方通道 = ACP stdio（hermes-acp.exe，session/list、session/new、
+ * session/load、session/prompt、session/cancel 已实测）。
+ */
+export interface AgentSessionAdapter {
+  /** 列出原生会话（含标题/时间戳；聚合器索引据此同步） */
+  listSessions(): Promise<AgentSession[]>
+  /** 新建原生会话（cwd=工作目录；返回含 nativeSessionId） */
+  createSession(input?: { cwd?: string; title?: string }): Promise<AgentSession>
+  /** 读取单个原生会话元数据（不复制消息历史） */
+  getSession(nativeSessionId: string): Promise<AgentSession>
+  /**
+   * 加载既有会话为可继续状态（官方 loadSession；不支持则 unsupported）。
+   * Hermes 官方语义：加载时经原生事件重放全部历史 → 返回 history 供渲染层重建
+   * MessageList（重启后历史显示走官方重放，不解析 Agent 私有存储）。
+   */
+  loadSession(nativeSessionId: string): Promise<AgentSession & { history?: AgentEvent[] }>
+  /** 发送并等整回合结束（返回最终文本；等价于排空 streamMessage） */
+  sendMessage(nativeSessionId: string, text: string): Promise<string>
+  /** 流式发送：逐事件产出（message_start / text_delta / tool 系列 / error / message_end） */
+  streamMessage(nativeSessionId: string, text: string): AsyncIterable<AgentEvent>
+  /** 中止当前回合（官方 cancel） */
+  stopGeneration(nativeSessionId: string): Promise<void>
+  renameSession(nativeSessionId: string, title: string): Promise<void>
+  /** 归档为聚合器索引语义（aggregatorArchiveState），不动原生数据 */
+  archiveSession(nativeSessionId: string): Promise<void>
+  /** 删除原生会话（走官方途径；仅当官方提供时实现，否则 unsupported） */
+  deleteSession(nativeSessionId: string): Promise<void>
 }
 
 export type StatusChangeHandler = (id: string, status: AgentStatus) => void

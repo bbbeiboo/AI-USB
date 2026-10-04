@@ -19,7 +19,10 @@ test('工厂默认返回 stub：接口方法齐全且为函数', async () => {
     'newSession', 'listSessions', 'switchSession', 'renameSession', 'deleteSession', 'pinSession',
     'getOutput', 'clearOutput', 'undoClearOutput',
     'copyOutput', 'exportSession', 'sendInput', 'openLogs', 'pinAgent',
-    'listModels', 'getModel', 'setModel', 'onStatusChange', 'onOutput']) {
+    'listModels', 'getModel', 'setModel',
+    'listTasks', 'listQueue', 'listFiles',
+    'getRecommendation', 'transferTask', 'listNotifications', 'stopGeneration',
+    'onStatusChange', 'onOutput']) {
     assert.equal(typeof svc[m], 'function', `method ${m}`);
   }
 });
@@ -31,6 +34,7 @@ test('listAgents：4 个 Agent，id 与 agents.json 对齐，默认全 STOPPED',
     ['claude-code', 'codex', 'hermes', 'openclaw']);
   assert.ok(agents.every((a) => a.status === 'STOPPED'));
   assert.ok(agents.every((a) => a.short.length >= 1));
+  assert.ok(agents.every((a) => typeof a.desc === 'string' && a.desc.length >= 2), '13.17：切换菜单需要一句话描述');
 });
 
 test('startAgent：STOPPED → STARTING → RUNNING 全程发事件，resolve 为 RUNNING', async () => {
@@ -193,6 +197,102 @@ test('13.16 模型切换：listModels 非空、getModel 默认第一项、setMod
   await assert.rejects(() => svc.listModels('nonexistent'));
 });
 
+test('13.17 任务/队列/文件：种子齐全且字段完整', async () => {
+  const svc = makeFast();
+  const tasks = await svc.listTasks();
+  assert.ok(tasks.length >= 4, '任务种子应 ≥4 条（覆盖五种状态的演示）');
+  const statuses = new Set(tasks.map((t) => t.status));
+  for (const s of ['pending', 'running', 'done', 'failed']) {
+    assert.ok(statuses.has(s), `任务状态应演示到 ${s}`);
+  }
+  for (const t of tasks) {
+    assert.ok(t.id && t.name && t.agentId && t.status && Number.isFinite(t.createdAt), `任务字段完整 ${t.id}`);
+  }
+  const queue = await svc.listQueue();
+  assert.ok(queue.length >= 1, '队列应至少有 1 条演示');
+  for (const q of queue) {
+    assert.ok(q.taskId && q.taskName && q.agentId && q.position >= 1, `队列字段完整 ${q.id}`);
+    assert.ok(tasks.some((t) => t.id === q.taskId), '队列条目应指向存在的任务');
+  }
+  const files = await svc.listFiles();
+  assert.ok(files.length >= 3, '文件中心应至少 3 条演示');
+  for (const f of files) {
+    assert.ok(f.name && f.ext && f.sizeBytes > 0 && f.sourceAgentId && f.taskName, `文件字段完整 ${f.id}`);
+  }
+});
+
+test('13.17 推荐：确定性映射、来源 Agent 不会被推荐', async () => {
+  const svc = makeFast();
+  for (const id of ['openclaw', 'hermes', 'codex', 'claude-code']) {
+    const rec = await svc.getRecommendation(id);
+    assert.ok(rec, `${id} 应有推荐`);
+    assert.ok(rec.agentId !== id, '推荐目标不得是来源自己');
+    assert.ok(rec.reason.length > 4 && typeof rec.confidence === 'number');
+  }
+  await assert.rejects(() => svc.getRecommendation('nonexistent'));
+});
+
+test('13.17 转交：登记为已转交任务 + 队列 + 通知；禁止自转交', async () => {
+  const svc = makeFast();
+  const beforeTasks = (await svc.listTasks()).length;
+  const beforeQueue = (await svc.listQueue()).length;
+  const beforeNotes = (await svc.listNotifications()).length;
+  const r = await svc.transferTask({
+    sourceAgentId: 'hermes', targetAgentId: 'codex',
+    includeConversation: true, includeFiles: true, includeTask: false,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.queued, true, 'stub 一律入队演示');
+  assert.ok(r.message.includes('stub'), '结果消息应带 stub 标识');
+  const tasks = await svc.listTasks();
+  assert.equal(tasks.length, beforeTasks + 1);
+  assert.equal(tasks[0].status, 'transferred');
+  assert.equal(tasks[0].agentId, 'codex');
+  const queue = await svc.listQueue();
+  assert.equal(queue.length, beforeQueue + 1);
+  assert.equal(queue[0].position, 1, '新转交任务应排在队首');
+  assert.equal(queue.length, new Set(queue.map((q) => q.position)).size, '队列位置应连续不重号');
+  const notes = await svc.listNotifications();
+  assert.equal(notes.length, beforeNotes + 1);
+  assert.equal(notes[0].kind, 'transfer');
+  // 任务书 §二十一：禁止转交给自己
+  await assert.rejects(() => svc.transferTask({
+    sourceAgentId: 'hermes', targetAgentId: 'hermes',
+    includeConversation: true, includeFiles: false, includeTask: false,
+  }), /self/);
+});
+
+test('13.17 stopGeneration：进行中的生成被中断并落定条目', async () => {
+  const svc = createStubAgentControlService({ startDelayMs: 10, stopDelayMs: 10, restartGapMs: 5, sendDelayMs: 600 });
+  const pushed = [];
+  svc.onOutput((id, e) => pushed.push(e));
+  const pending = svc.sendInput('hermes', '慢慢回答');
+  // 等流式条目出现（sendDelay 600ms 后才开始分片），再触发停止
+  const hasStream = () => pushed.some((e) => e.streaming !== undefined);
+  for (let i = 0; i < 100 && !hasStream(); i++) await sleep(20);
+  assert.ok(hasStream(), '800ms 内应出现流式条目');
+  await svc.stopGeneration('hermes');
+  await pending; // sendInput 应自行 resolve，不悬挂
+  const stream = pushed.filter((e) => e.streaming !== undefined);
+  const final = stream[stream.length - 1];
+  assert.equal(final.streaming, false, '被打断的条目应落定');
+  assert.ok(final.text.includes('已停止'), '落定文本应标注已停止');
+  assert.equal(pushed.some((e) => e.kind === 'system' && e.text.includes('stub 输出仅演示')), false, '中断后不应再推送收尾系统条目');
+});
+
+test('13.17 stopGeneration：正常完成的发送不受影响', async () => {
+  const svc = makeFast();
+  const pushed = [];
+  svc.onOutput((id, e) => pushed.push(e));
+  // 未调用 stopGeneration：完整流程走完
+  await svc.sendInput('hermes', '你好');
+  const stream = pushed.filter((e) => e.streaming !== undefined);
+  assert.ok(stream.length >= 5);
+  assert.equal(stream[stream.length - 1].streaming, false);
+  assert.ok(!stream[stream.length - 1].text.includes('已停止'), '正常完成不应带停止标注');
+  await svc.stopGeneration('hermes'); // 空闲时调用应无副作用
+});
+
 test('__calls 记录全部调用方法名', async () => {
   const svc = makeFast();
   await svc.listAgents();
@@ -215,5 +315,12 @@ test('realAgentControlService：每方法都 throw not-wired-yet（骨架契约�
   await assert.rejects(() => realAgentControlService.deleteSession('hermes', 's'), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.pinSession('hermes', 's', true), /not-wired-yet/);
   await assert.rejects(() => realAgentControlService.setModel('hermes', 'm'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listTasks(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listQueue(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listFiles(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.getRecommendation('hermes'), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.transferTask({ sourceAgentId: 'hermes', targetAgentId: 'codex', includeConversation: true, includeFiles: true, includeTask: true }), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.listNotifications(), /not-wired-yet/);
+  await assert.rejects(() => realAgentControlService.stopGeneration('hermes'), /not-wired-yet/);
   assert.throws(() => realAgentControlService.onStatusChange(() => {}), /not-wired-yet/);
 });

@@ -20,6 +20,8 @@ export interface AgentSummary {
   /** 状态栏摘要；stub 为演示值，下一轮接线后来自 manifest / user-config */
   baseUrl: string
   version: string
+  /** 一句话定位（13.17：切换菜单要求 Logo+名称+简短描述+选中状态）；stub 为演示文案 */
+  desc?: string
 }
 
 export interface SessionMeta {
@@ -50,6 +52,79 @@ export interface OutputEntry {
 export interface ExportedSession {
   filename: string
   content: string
+}
+
+// —— 任务 / 队列 / 文件（13.17 任务书 §三十四 类型清单）———————————————————
+/** 任务状态五态（任务书 §二十四）；中文标签由 UI 层映射 */
+export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'transferred'
+
+export interface TaskItem {
+  id: string
+  name: string
+  agentId: string
+  status: TaskStatus
+  createdAt: number
+  /** 关联会话（可选；用于「打开会话」跳转） */
+  sessionId?: string
+}
+
+export interface QueueEntry {
+  id: string
+  taskId: string
+  taskName: string
+  /** 目标 Agent（任务书 §二十五：目标忙 → 入队 → 空闲自动执行） */
+  agentId: string
+  position: number
+  enqueuedAt: number
+}
+
+export interface FileItem {
+  id: string
+  name: string
+  /** 扩展名（不含点），如 pdf / py / xlsx */
+  ext: string
+  sizeBytes: number
+  sourceAgentId: string
+  taskName: string
+  createdAt: number
+}
+
+// —— 转交 / 推荐（任务书 §二十二/§二十三 的结构定死）————————————————————
+export interface TransferPayload {
+  sourceAgentId: string
+  targetAgentId: string
+  conversationId?: string
+  taskId?: string
+  fileIds?: string[]
+  includeConversation: boolean
+  includeFiles: boolean
+  includeTask: boolean
+}
+
+export interface TransferResult {
+  ok: boolean
+  taskId?: string
+  /** true = 目标 Agent 忙，已进入等待队列（stub 一律入队演示） */
+  queued: boolean
+  /** 展示用消息（stub 文案显式带 stub 标识） */
+  message: string
+}
+
+export interface AgentRecommendation {
+  agentId: string
+  reason: string
+  confidence?: number
+}
+
+// —— 通知中心（任务书 §七：任务完成/转交/文件/队列/更新/系统）————————————————
+export type NotificationKind = 'task' | 'transfer' | 'file' | 'queue' | 'update' | 'system'
+
+export interface AppNotification {
+  id: string
+  kind: NotificationKind
+  title: string
+  detail?: string
+  ts: number
 }
 
 export type StatusChangeHandler = (id: string, status: AgentStatus) => void
@@ -115,6 +190,29 @@ export interface AgentControlService {
   getModel(id: string): Promise<string>
   /** 切换模型并持久化到服务层状态（stub 内存态） */
   setModel(id: string, model: string): Promise<void>
+
+  // —— 任务 / 队列 / 文件（13.17 任务书 §二十四~§二十六，先 UI 后真实 Agent）———
+  /** 任务列表（stub 为演示种子 + 转交产生的任务；接线轮映射 task:list） */
+  listTasks(): Promise<TaskItem[]>
+  /** 目标 Agent 忙时的等待队列（stub 内存态；接线轮映射 task:queue） */
+  listQueue(): Promise<QueueEntry[]>
+  /** 文件中心（stub 演示行；接线轮映射 file:list，数据源 = 各 Agent 工作目录） */
+  listFiles(): Promise<FileItem[]>
+
+  // —— 转交 / 推荐（13.17 任务书 §十七~§二十三）——————————————————————
+  /** 每轮回复后的下一步推荐（stub 为确定性映射；接线轮映射 agent:recommend） */
+  getRecommendation(sourceAgentId: string): Promise<AgentRecommendation | null>
+  /**
+   * 转交任务。stub 校验 目标≠来源（任务书 §二十一），成功后登记为
+   * 目标 Agent 队列中的等待任务 + 推一条通知；不向真实 Agent 发送任何内容。
+   */
+  transferTask(payload: TransferPayload): Promise<TransferResult>
+
+  // —— 通知中心（13.17 任务书 §七，Mock 数据）—————————————————————————
+  listNotifications(): Promise<AppNotification[]>
+
+  /** 停止当前生成（输入框 ↑→■；stub 落定流式条目，接线轮映射 agent:input 的 stop） */
+  stopGeneration(id: string): Promise<void>
 
   onStatusChange(cb: StatusChangeHandler): () => void
   onOutput(cb: OutputHandler): () => void

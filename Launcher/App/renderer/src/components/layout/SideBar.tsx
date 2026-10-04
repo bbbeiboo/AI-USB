@@ -1,18 +1,29 @@
 /**
- * 左侧栏（规范 §7，13.16 更新）：会话搜索 + 会话列表（⋯ 菜单：重命名/置顶/删除）+ 左下用户卡。
- * 对标 Cherry Studio / LobeChat / Chatbox 的会话管理（见 STEP3-NOTES 13.16 对标表）。
- * Agent 列表已删（13.15）——切换只走顶栏 logo；本组件新增 Ctrl+K 聚焦搜索。
+ * 左侧栏（13.17 任务书 §十/§十一 重构）：
+ *   ＋ 新建 → 🔍 搜索 → 导航（💬会话 📋任务 📁文件 ⏳队列）→ 最近会话列表 → 左下用户区
+ * - 会话列表保留 13.16 的 ⋯ 菜单（重命名/置顶/删除，二次确认）
+ * - 用户块点击弹出：个人资料/账户/使用情况/退出登录（stub）；设置行打开既有设置弹窗
+ * - 无任何 Agent 状态元素（任务书禁令）
  */
 import { useEffect, useRef, useState } from 'react'
-import { Check, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Settings, Trash2, User } from 'lucide-react'
+import {
+  Check, ClipboardList, FolderOpen, Hourglass, MessageSquare, MoreHorizontal, Pencil,
+  Pin, PinOff, Plus, Search, Settings, Trash2, User,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { toast } from '@/components/ui/toast'
 import type { SessionMeta } from '@/services/agent-control-types'
 import { cn } from 'cn'
 
+export type SideView = 'chat' | 'tasks' | 'queue' | 'files'
+
 interface Props {
+  view: SideView
   sessions: SessionMeta[]
   sessionId: string | null
+  onSwitchView: (v: SideView) => void
   onNewSession: () => void
   onSwitchSession: (id: string) => void
   onRenameSession: (id: string, title: string) => void
@@ -21,8 +32,15 @@ interface Props {
   onOpenSettings: () => void
 }
 
+const NAV: Array<{ id: SideView; label: string; icon: typeof MessageSquare }> = [
+  { id: 'chat', label: '会话', icon: MessageSquare },
+  { id: 'tasks', label: '任务', icon: ClipboardList },
+  { id: 'files', label: '文件', icon: FolderOpen },
+  { id: 'queue', label: '队列', icon: Hourglass },
+]
+
 export default function SideBar({
-  sessions, sessionId, onNewSession, onSwitchSession, onRenameSession, onDeleteSession, onPinSession, onOpenSettings,
+  view, sessions, sessionId, onSwitchView, onNewSession, onSwitchSession, onRenameSession, onDeleteSession, onPinSession, onOpenSettings,
 }: Props) {
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -32,7 +50,7 @@ export default function SideBar({
   const searchRef = useRef<HTMLInputElement | null>(null)
   const editRef = useRef<HTMLInputElement | null>(null)
 
-  // Ctrl+K 聚焦会话搜索（快捷键面板见顶栏帮助）
+  // Ctrl+K 聚焦会话搜索（快捷键面板见顶栏 ⋯ → 快捷键）
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
       if (ev.ctrlKey && ev.key.toLowerCase() === 'k') {
@@ -62,7 +80,7 @@ export default function SideBar({
       <div className="space-y-2 p-2.5">
         <Button id="agent-ctrl-new-session" variant="secondary" className="w-full justify-start gap-2 rounded-lg" onClick={() => void onNewSession()}>
           <Plus className="size-4" strokeWidth={1.5} aria-hidden />
-          新建会话
+          新建
         </Button>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} aria-hidden />
@@ -76,9 +94,27 @@ export default function SideBar({
             onChange={(ev) => setQuery(ev.target.value)}
           />
         </div>
+        {/* 导航（任务书 §十：💬会话 📋任务 📁文件 ⏳队列） */}
+        <nav id="side-nav" className="space-y-0.5">
+          {NAV.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              id={`nav-${id}`}
+              aria-current={view === id}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ease-out hover:bg-accent/70',
+                view === id && 'bg-accent font-medium',
+              )}
+              onClick={() => onSwitchView(id)}
+            >
+              <Icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+              {label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <div className="px-3.5 pb-1 text-[11px] text-muted-foreground">会话</div>
+      <div className="px-3.5 pb-1 text-[11px] text-muted-foreground">最近会话</div>
       <div id="session-list" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {visible.length === 0 ? (
           <div className="px-2 py-3 text-[11px] text-muted-foreground">
@@ -90,7 +126,7 @@ export default function SideBar({
               key={s.id}
               className={cn(
                 'group flex items-center rounded-lg pr-0.5 transition-colors duration-150 ease-out hover:bg-accent/70',
-                s.id === sessionId && 'bg-accent',
+                s.id === sessionId && view === 'chat' && 'bg-accent',
               )}
             >
               {editingId === s.id ? (
@@ -115,7 +151,10 @@ export default function SideBar({
                   <button
                     id={`session-item-${s.id}`}
                     className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[13px]"
-                    onClick={() => void onSwitchSession(s.id)}
+                    onClick={() => {
+                      onSwitchView('chat')
+                      void onSwitchSession(s.id)
+                    }}
                   >
                     {s.pinned ? <Pin className="size-3 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-label="已置顶" /> : null}
                     <span className="truncate">{s.title}</span>
@@ -171,23 +210,57 @@ export default function SideBar({
         )}
       </div>
 
-      {/* ===== 个人用户卡（13.15）：左下角身份展示 + 设置齿轮 ===== */}
-      <div id="user-card" className="flex shrink-0 items-center gap-2.5 border-t border-border/70 p-2.5">
-        <div
-          id="user-avatar"
-          aria-hidden
-          className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border/60 bg-accent text-muted-foreground"
+      {/* ===== 左下用户区（任务书 §十一）：用户块（弹出菜单）+ 设置行 ===== */}
+      <div id="user-card" className="shrink-0 border-t border-border/70 p-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              id="user-card-trigger"
+              className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-accent/70"
+              aria-label="个人用户菜单"
+            >
+              <span
+                id="user-avatar"
+                aria-hidden
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border/60 bg-accent text-muted-foreground"
+              >
+                <User className="size-4" strokeWidth={1.5} />
+              </span>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span id="user-name" className="block truncate text-[13px] font-medium">本地用户</span>
+                <span className="block truncate text-[11px] text-muted-foreground">stub 演示账户</span>
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" side="top" className="w-44 p-1.5">
+            <UserMenuItem id="user-menu-profile" label="个人资料" onClick={() => toast('个人资料（stub：登录接线后提供真实身份）')} />
+            <UserMenuItem id="user-menu-account" label="账户" onClick={() => toast('账户（stub：登录接线后提供）')} />
+            <UserMenuItem id="user-menu-usage" label="使用情况" onClick={onOpenSettings} />
+            <UserMenuItem id="user-menu-logout" label="退出登录" onClick={() => toast('退出登录（stub：登录接线后可用）')} />
+          </PopoverContent>
+        </Popover>
+        <button
+          id="app-settings"
+          className="mt-0.5 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ease-out hover:bg-accent/70"
+          onClick={onOpenSettings}
         >
-          <User className="size-4" strokeWidth={1.5} />
-        </div>
-        <div className="min-w-0 flex-1 leading-tight">
-          <div id="user-name" className="truncate text-[13px] font-medium">本地用户</div>
-          <div className="truncate text-[11px] text-muted-foreground">stub 演示账户</div>
-        </div>
-        <Button id="app-settings" variant="ghost" size="icon-sm" aria-label="设置" title="设置" onClick={onOpenSettings}>
-          <Settings className="size-[18px]" strokeWidth={1.5} />
-        </Button>
+          <Settings className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+          设置
+        </button>
       </div>
     </aside>
+  )
+}
+
+/** Popover 内的菜单行（与 DropdownMenuItem 同视觉；避免嵌套弹出层的焦点问题） */
+function UserMenuItem({ id, label, onClick }: { id: string; label: string; onClick: () => void }) {
+  return (
+    <button
+      id={id}
+      className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 ease-out hover:bg-accent"
+      onClick={onClick}
+    >
+      {label}
+    </button>
   )
 }

@@ -1,39 +1,45 @@
 /**
- * v2 布局（13.16 更新）：
- *   ┌──────────────────── TopBar（毛玻璃）────────────────────┐
- *   │ [logo=当前Agent，左键切换]   当前会话名   [检查更新][帮助] │
- *   ├──── SideBar ──────┬────────── Workbench ────────────────┤
- *   │ 新建会话           │ 工具条：会话名+模型chip+重生成/清空/    │
- *   │ 会话搜索(Ctrl+K)   │   复制/导出（启停栏已删：开机自启全部）  │
- *   │ 会话列表(⋯菜单)    │ 输出流（stub 驱动，含流式响应）         │
- *   │ [用户卡+设置]       │ 输入框 + 发送                         │
- *   ├── StatusBar（状态+日志入口+stub 标识）┴────────────────────┤
- * 13.16 裁决：打开软件即开启全部 Agent（hook 层统一走 startAgent，真接线轮零改动）；
- * 工作台头部启停栏删除，日志入口移到状态栏。数据全部来自 getAgentControlService()
- * （stub/real 唯一切换点）。设置弹窗沿用既有三组件（13.13 硬规则 6：功能逻辑不动）。
+ * v2 布局（13.17 任务书重构）：
+ *   ┌────────────────────── TopBar（毛玻璃）────────────────────────┐
+ *   │ [logo=当前Agent ▼]                    [搜索][通知][更多 ⋯]      │
+ *   ├──── SideBar ──────┬──────────── 主区（按视图切换）──────────────┤
+ *   │ ＋新建 / 搜索       │ chat:   Workbench（会话名+⋯ / 消息+推荐卡 /  │
+ *   │ 会话|任务|文件|队列 │         输入区＋📎拖拽+模型+发送↔停止）       │
+ *   │ 最近会话(⋯菜单)     │ tasks:  TaskPanel   queue: QueuePanel        │
+ *   │ [用户块+设置行]     │ files:  FilePanel                            │
+ *   └───────────────────┴──────────────────────────────────────────────┘
+ * 13.17 裁决：底部 StatusBar 整体删除（任务书 §十二/§三十九），日志入口移入 ⋯ 菜单；
+ * 每轮回复带「转交」推荐卡（TransferDialog，禁止自转交）；数据全部来自
+ * getAgentControlService()（stub/real 唯一切换点）。设置弹窗沿用既有三组件
+ * （13.13 硬规则 6：功能逻辑不动）。
  */
 import { useEffect, useState } from 'react'
 import TopBar from '@/components/layout/TopBar'
-import SideBar from '@/components/layout/SideBar'
+import SideBar, { type SideView } from '@/components/layout/SideBar'
 import Workbench from '@/components/workbench/Workbench'
-import StatusBar from '@/components/layout/StatusBar'
+import TaskPanel from '@/components/task/TaskPanel'
+import QueuePanel from '@/components/task/QueuePanel'
+import FilePanel from '@/components/files/FilePanel'
 import { ToastHost } from '@/components/ui/toast'
 import SettingsModal from '@/components/settings/SettingsModal'
 import { useWorkbench } from '@/hooks/use-workbench'
+import type { TaskItem } from '@/services/agent-control-types'
 
 export default function App() {
   const wb = useWorkbench()
   /*
-   * 设置弹窗开关：入口在侧栏左下用户卡（app-settings，13.15 起唯一入口）→ 根节点持有。
+   * 设置弹窗开关：入口在侧栏左下「设置」行 / 用户菜单「使用情况」/ 顶栏 ⋯「关于」。
    * 弹窗内部逻辑不动（打开时才拉数据，约束 7）。
    */
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false)
+  const [view, setView] = useState<SideView>('chat')
 
-  // Ctrl+N 新建会话（快捷键面板见顶栏帮助 Popover；Ctrl+K 由 SideBar 自管聚焦）
+  // Ctrl+N 新建会话（快捷键面板见顶栏 ⋯ → 快捷键；Ctrl+K 由 SideBar 自管聚焦）
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
       if (ev.ctrlKey && ev.key.toLowerCase() === 'n') {
         ev.preventDefault()
+        setView('chat')
         void wb.newSession()
       }
     }
@@ -41,18 +47,35 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [wb])
 
+  /** 任务/搜索结果 → 打开对应会话（跨 Agent 时先切 Agent，偏好会话直达） */
+  async function openTask(task: TaskItem) {
+    if (task.agentId !== wb.current?.id) await wb.switchAgent(task.agentId, task.sessionId)
+    else if (task.sessionId) await wb.switchSession(task.sessionId)
+    setView('chat')
+  }
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <TopBar
         agents={wb.agents}
         current={wb.current}
-        sessionTitle={wb.sessionTitle}
+        sessions={wb.sessions}
+        notifications={wb.notifications}
         onSwitchAgent={(id) => void wb.switchAgent(id)}
+        onOpenSession={(id) => {
+          setView('chat')
+          void wb.switchSession(id)
+        }}
+        onOpenView={(v) => setView(v)}
+        onOpenLogs={() => void wb.openLogs()}
+        onOpenAbout={() => setSettingsOpen(true)}
       />
       <div className="flex min-h-0 flex-1">
         <SideBar
+          view={view}
           sessions={wb.sessions}
           sessionId={wb.sessionId}
+          onSwitchView={setView}
           onNewSession={() => void wb.newSession()}
           onSwitchSession={(id) => void wb.switchSession(id)}
           onRenameSession={(id, title) => void wb.renameSession(id, title)}
@@ -60,9 +83,16 @@ export default function App() {
           onPinSession={(id) => void wb.toggleSessionPin(id)}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-        <Workbench wb={wb} />
+        {view === 'chat' ? (
+          <Workbench wb={wb} />
+        ) : view === 'tasks' ? (
+          <TaskPanel agents={wb.agents} onOpenTask={(t) => void openTask(t)} />
+        ) : view === 'queue' ? (
+          <QueuePanel agents={wb.agents} />
+        ) : (
+          <FilePanel agents={wb.agents} />
+        )}
       </div>
-      <StatusBar agent={wb.current} onOpenLogs={() => void wb.openLogs()} />
       <ToastHost />
       <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>

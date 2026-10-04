@@ -21,6 +21,13 @@
  * | copyOutput            | 渲染层自足（getOutput + clipboard 写入）| 无需通道 |
  * | openLogs              | shell:openLogs（现有=全局日志）→ 下一轮扩展 per-agent | 部分 |
  * | pinAgent              | 渲染层偏好（localStorage 即可）        | 无需通道 |
+ * | listTasks             | 需新增 task:list                       | 无 |
+ * | listQueue             | 需新增 task:queue                      | 无 |
+ * | listFiles             | 需新增 file:list（数据源=各 Agent 工作目录） | 无 |
+ * | getRecommendation     | 需新增 agent:recommend                 | 无 |
+ * | transferTask          | 需新增 agent:transfer（写操作，含附带内容载荷） | 无 |
+ * | listNotifications     | 需新增 task:events（完成/转交/文件/队列事件流） | 无 |
+ * | stopGeneration        | 需新增 agent:input 的 stop 语义（或 agent:abort） | 无 |
  *
  * 会话/输出类通道依赖「Agent 会话数据源」的裁决（Agent TUI 的会话持久化位置），
  * 下一轮接线前需先与用户确认数据来源，不在本轮范围。
@@ -54,6 +61,13 @@ export const realAgentControlService: AgentControlService = {
   async listModels() { notWired('listModels') },
   async getModel() { notWired('getModel') },
   async setModel() { notWired('setModel') },
+  async listTasks() { notWired('listTasks') },
+  async listQueue() { notWired('listQueue') },
+  async listFiles() { notWired('listFiles') },
+  async getRecommendation() { notWired('getRecommendation') },
+  async transferTask() { notWired('transferTask') },
+  async listNotifications() { notWired('listNotifications') },
+  async stopGeneration() { notWired('stopGeneration') },
   onStatusChange() { notWired('onStatusChange') },
   onOutput() { notWired('onOutput') },
 }

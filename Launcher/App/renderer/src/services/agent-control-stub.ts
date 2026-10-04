@@ -9,17 +9,27 @@
  *   stop:   --500ms-->  RUNNING → STOPPING → STOPPED
  *   restart = stop → 300ms 间隔 → start（完整 绿→黄→灰→黄→绿）
  *
+ * 13.17 追加：任务/队列/文件/通知 演示种子 + 确定性推荐映射 + 转交登记（目标≠来源）
+ * + 可中断生成（genSeq 代数戳）。全部仍为内存态，不触碰任何真实数据源。
+ *
  * 本文件零运行时依赖（仅 import type），Node strip-types 可直接加载（根 tests/ 单测）。
  */
 import type {
   AgentControlService,
+  AgentRecommendation,
   AgentStatus,
   AgentSummary,
+  AppNotification,
   CallRecord,
+  FileItem,
   OutputEntry,
   OutputHandler,
+  QueueEntry,
   SessionMeta,
   StatusChangeHandler,
+  TaskItem,
+  TransferPayload,
+  TransferResult,
 } from './agent-control-types.ts'
 
 export interface StubOptions {
@@ -35,14 +45,16 @@ interface AgentSeed {
   short: string
   baseUrl: string
   version: string
+  /** 一句话定位（切换菜单描述行，13.17） */
+  desc: string
 }
 
 /** 演示名单：id 与 agents.json 一致（下一轮接线直接对上真实清单） */
 const AGENT_SEEDS: AgentSeed[] = [
-  { id: 'openclaw', name: 'OpenClaw', short: 'O', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0' },
-  { id: 'hermes', name: 'Hermes', short: 'H', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0' },
-  { id: 'codex', name: 'Codex', short: 'C', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0' },
-  { id: 'claude-code', name: 'Claude Code', short: 'CC', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0' },
+  { id: 'openclaw', name: 'OpenClaw', short: 'O', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0', desc: '通用任务执行与文件整理' },
+  { id: 'hermes', name: 'Hermes', short: 'H', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0', desc: '资料分析 · 长文本处理' },
+  { id: 'codex', name: 'Codex', short: 'C', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0', desc: '程序计算 · 代码验证' },
+  { id: 'claude-code', name: 'Claude Code', short: 'CC', baseUrl: 'https://demo.local/v1（stub）', version: 'stub 1.0', desc: '代码工程与实现' },
 ]
 
 const SEED_SESSION_TITLES = ['初始化体检', '日志走查', '示例任务']
@@ -55,12 +67,34 @@ const STUB_MODELS: Record<string, string[]> = {
   'claude-code': ['claude-sonnet-4.5', 'claude-opus-4.1', 'claude-haiku-4'],
 }
 
+/**
+ * 下一步推荐的确定性映射（13.17 任务书 §二十三：当前阶段 Mock 推荐数据）。
+ * 推荐只是推荐——UI 允许用户转交给任意其他 Agent。
+ */
+const STUB_RECOMMENDATIONS: Record<string, { agentId: string; reason: string; confidence: number }> = {
+  openclaw: { agentId: 'hermes', reason: '当前任务涉及资料整理与长文本，Hermes 更适合继续处理', confidence: 0.88 },
+  hermes: { agentId: 'codex', reason: '当前任务涉及程序计算，Codex 更适合继续处理', confidence: 0.91 },
+  codex: { agentId: 'claude-code', reason: '进入工程实现阶段，Claude Code 擅长代码工程', confidence: 0.86 },
+  'claude-code': { agentId: 'openclaw', reason: '后续落地执行可交回 OpenClaw 形成闭环', confidence: 0.83 },
+}
+
 export function createStubAgentControlService(opts: StubOptions = {}): AgentControlService & { __calls: CallRecord[] } {
   const startDelay = opts.startDelayMs ?? 800
   const stopDelay = opts.stopDelayMs ?? 500
   const restartGap = opts.restartGapMs ?? 300
   const sendDelay = opts.sendDelayMs ?? 300
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+  /** 可中断 sleep：gen 过期立即返回 false（stopGeneration 的中断机制） */
+  async function sleepGen(ms: number, gen: number): Promise<boolean> {
+    let waited = 0
+    while (waited < ms) {
+      if (gen !== genSeq) return false
+      const step = Math.min(20, ms - waited)
+      await sleep(step)
+      waited += step
+    }
+    return gen === genSeq
+  }
 
   const status = new Map<string, AgentStatus>()
   const pinned = new Set<string>()
@@ -74,6 +108,30 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
   const calls: CallRecord[] = []
   let seq = 0
   const nextId = (p: string) => `${p}-${Date.now().toString(36)}-${(seq++).toString(36)}`
+
+  // ---- 13.17 任务/队列/文件/通知 演示种子（stub 内存数据，接线轮替换为真实来源）----
+  const seedNow = Date.now()
+  const tasks: TaskItem[] = [
+    { id: 'task-seed-1', name: '毕业设计资料分析', agentId: 'hermes', status: 'done', createdAt: seedNow - 26 * 3600_000, sessionId: 'seed-hermes-1' },
+    { id: 'task-seed-2', name: 'Python 数据处理', agentId: 'codex', status: 'running', createdAt: seedNow - 5 * 3600_000 },
+    { id: 'task-seed-3', name: '文件整理', agentId: 'openclaw', status: 'pending', createdAt: seedNow - 2 * 3600_000 },
+    { id: 'task-seed-4', name: 'C 语言课程作业', agentId: 'claude-code', status: 'failed', createdAt: seedNow - 30 * 3600_000 },
+  ]
+  const queue: QueueEntry[] = [
+    { id: 'q-seed-1', taskId: 'task-seed-3', taskName: '文件整理', agentId: 'openclaw', position: 1, enqueuedAt: seedNow - 2 * 3600_000 },
+  ]
+  const files: FileItem[] = [
+    { id: 'file-seed-1', name: '资料汇总.pdf', ext: 'pdf', sizeBytes: 2_516_582, sourceAgentId: 'hermes', taskName: '毕业设计资料分析', createdAt: seedNow - 26 * 3600_000 },
+    { id: 'file-seed-2', name: '计算脚本.py', ext: 'py', sizeBytes: 12_288, sourceAgentId: 'codex', taskName: 'Python 数据处理', createdAt: seedNow - 5 * 3600_000 },
+    { id: 'file-seed-3', name: '结果表.xlsx', ext: 'xlsx', sizeBytes: 90_112, sourceAgentId: 'codex', taskName: 'Python 数据处理', createdAt: seedNow - 4 * 3600_000 },
+  ]
+  let notifications: AppNotification[] = [
+    { id: 'n-seed-1', kind: 'system', title: '通知中心已就绪', detail: 'stub 演示数据；任务完成/转交/文件等真实事件在接线轮接入', ts: seedNow - 10 * 60_000 },
+    { id: 'n-seed-2', kind: 'update', title: '检查更新', detail: 'v1.0.0 已是最新（stub 演示，未联网检查）', ts: seedNow - 60 * 60_000 },
+  ]
+  let taskSeq = 0
+  /** 生成代数：stopGeneration 自增使进行中的 sendInput 中途退出（stub 单生成流假设） */
+  let genSeq = 0
 
   function record(method: string, ...args: unknown[]) {
     calls.push({ method, args, ts: Date.now() })
@@ -281,8 +339,9 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     assertAgent(id)
     const csid = currentSession.get(id)
     if (!csid) throw new Error('stub: no current session')
+    const gen = ++genSeq
     pushEntry(id, { id: nextId('e'), sessionId: csid, ts: Date.now(), kind: 'user', text })
-    await sleep(sendDelay)
+    if (!(await sleepGen(sendDelay, gen))) return
     const agent = seed(id)
     pushEntry(id, {
       id: nextId('e'), sessionId: csid, ts: Date.now(), kind: 'agent',
@@ -293,11 +352,21 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     const full = `${agent.name}（stub）：这是一条分片推送的模拟回复，用来验证输出区的流式渲染；真实回复将在接线轮由 Agent 本体产生。`
     pushEntry(id, { id: streamId, sessionId: csid, ts: Date.now(), kind: 'agent', text: '', streaming: true })
     const chunks = 4
+    let lastText = ''
     for (let i = 1; i <= chunks; i++) {
-      await sleep(Math.max(20, Math.round(sendDelay / 2)))
+      if (!(await sleepGen(Math.max(20, Math.round(sendDelay / 2)), gen))) {
+        // 被 stopGeneration 打断：当前条目落定并标注，不再推送后续分片
+        updateEntry(id, {
+          id: streamId, sessionId: csid, ts: Date.now(), kind: 'agent',
+          text: lastText ? `${lastText}\n（已停止生成（stub））` : '（已停止生成（stub））',
+          streaming: false,
+        })
+        return
+      }
+      lastText = full.slice(0, Math.ceil((full.length * i) / chunks))
       updateEntry(id, {
         id: streamId, sessionId: csid, ts: Date.now(), kind: 'agent',
-        text: full.slice(0, Math.ceil((full.length * i) / chunks)),
+        text: lastText,
         streaming: i < chunks,
       })
     }
@@ -332,6 +401,63 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     if (!STUB_MODELS[id]?.includes(model)) throw new Error(`stub: unknown model ${model} for ${id}`)
     currentModel.set(id, model)
   }
+
+  // ---- 13.17 任务/队列/文件/转交/推荐/通知/停止 ------------------------------
+  async function listTasks(): Promise<TaskItem[]> {
+    record('listTasks')
+    return [...tasks]
+  }
+  async function listQueue(): Promise<QueueEntry[]> {
+    record('listQueue')
+    return [...queue]
+  }
+  async function listFiles(): Promise<FileItem[]> {
+    record('listFiles')
+    return [...files]
+  }
+  async function getRecommendation(sourceAgentId: string): Promise<AgentRecommendation | null> {
+    record('getRecommendation', sourceAgentId)
+    assertAgent(sourceAgentId)
+    const rec = STUB_RECOMMENDATIONS[sourceAgentId]
+    return rec ? { ...rec } : null
+  }
+  async function transferTask(payload: TransferPayload): Promise<TransferResult> {
+    record('transferTask', payload)
+    assertAgent(payload.sourceAgentId)
+    assertAgent(payload.targetAgentId)
+    // 任务书 §二十一：禁止转交给自己（UI 层已禁用，服务层兜底校验）
+    if (payload.targetAgentId === payload.sourceAgentId) {
+      throw new Error('stub: cannot transfer to self')
+    }
+    await sleep(600)
+    const source = seed(payload.sourceAgentId)
+    const target = seed(payload.targetAgentId)
+    const name = `来自 ${source.name} 的转交任务`
+    const taskId = `task-xfer-${++taskSeq}`
+    tasks.unshift({ id: taskId, name, agentId: payload.targetAgentId, status: 'transferred', createdAt: Date.now() })
+    queue.unshift({ id: `q-${taskId}`, taskId, taskName: name, agentId: payload.targetAgentId, position: 1, enqueuedAt: Date.now() })
+    queue.forEach((q, i) => { q.position = i + 1 })
+    notifications = [
+      { id: nextId('n'), kind: 'transfer', title: `已转交给 ${target.name}`, detail: `${name}（stub 演示，未发送真实内容）`, ts: Date.now() },
+      ...notifications,
+    ]
+    return {
+      ok: true,
+      taskId,
+      queued: true,
+      message: `已转交给 ${target.name}，进入其等待队列（stub 演示，未发送真实内容）`,
+    }
+  }
+  async function listNotifications(): Promise<AppNotification[]> {
+    record('listNotifications')
+    return [...notifications]
+  }
+  async function stopGeneration(id: string): Promise<void> {
+    record('stopGeneration', id)
+    assertAgent(id)
+    // 自增代数即可：进行中的 sendInput 在下一个轮询片发现 gen 过期，自行落定
+    genSeq++
+  }
   function onStatusChange(cb: StatusChangeHandler): () => void {
     statusCbs.add(cb)
     return () => statusCbs.delete(cb)
@@ -348,6 +474,7 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
       status: status.get(a.id) ?? 'STOPPED',
       pinned: pinned.has(a.id),
       baseUrl: a.baseUrl, version: a.version,
+      desc: a.desc,
     }))
     // 置顶优先，组内保持原顺序（排序须稳定）
     return list.filter((a) => a.pinned).concat(list.filter((a) => !a.pinned))
@@ -363,6 +490,8 @@ export function createStubAgentControlService(opts: StubOptions = {}): AgentCont
     newSession, listSessions, switchSession, renameSession, deleteSession, pinSession,
     getOutput, clearOutput, undoClearOutput, copyOutput, exportSession, sendInput,
     openLogs, pinAgent, listModels, getModel, setModel,
+    listTasks, listQueue, listFiles,
+    getRecommendation, transferTask, listNotifications, stopGeneration,
     onStatusChange, onOutput,
     __calls: calls,
   }

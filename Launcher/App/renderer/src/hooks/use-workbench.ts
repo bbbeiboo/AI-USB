@@ -6,7 +6,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getAgentControlService } from '@/services/agent-control'
-import type { AgentStatus, AgentSummary, OutputEntry, SessionMeta } from '@/services/agent-control-types'
+import type {
+  AgentStatus, AgentSummary, AppNotification, OutputEntry, SessionMeta, TransferPayload, TransferResult,
+} from '@/services/agent-control-types'
 import { toast } from '@/components/ui/toast'
 import { copyText } from '@/lib/clipboard'
 
@@ -26,6 +28,10 @@ export function useWorkbench() {
   const [model, setModelState] = useState<string>('')
   const [models, setModels] = useState<string[]>([])
   const [busy, setBusy] = useState<BusyAction>(null)
+  /** 生成中（输入框 ↑→■ 的依据；覆盖 send 与 regenerate 两条路径） */
+  const [generating, setGenerating] = useState<boolean>(false)
+  /** 通知中心（13.17）：挂载拉一次，转交后刷新 */
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
 
   // 订阅回调里用 ref 判断「推送是否属于当前视图」，避免闭包过期
   const currentIdRef = useRef(currentId)
@@ -74,6 +80,8 @@ export function useWorkbench() {
       // 13.16 用户裁决：打开软件即开启所有 Agent（stub 走同一 startAgent 调用路径，
       // 真接线轮无需改动本段——服务层切 real 后即真实启动，进程归 pm 管）。
       for (const a of list) void svc.startAgent(a.id).catch(() => {})
+      // 通知中心初载（失败静默：通知不是关键路径）
+      void svc.listNotifications().then((ns) => { if (alive) setNotifications(ns) }).catch(() => {})
     })
     return () => {
       alive = false
@@ -87,11 +95,11 @@ export function useWorkbench() {
 
   // ---- Agent / 会话切换 -----------------------------------------------------
   const switchAgent = useCallback(
-    async (id: string) => {
+    async (id: string, preferId?: string) => {
       if (id === currentIdRef.current) return
       setCurrentId(id)
       setOutput([])
-      await loadSessions(id)
+      await loadSessions(id, preferId)
     },
     [loadSessions],
   )
@@ -260,7 +268,7 @@ export function useWorkbench() {
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
-      if (!currentId || !trimmed) return
+      if (!currentId || !trimmed || generating) return
       // 主流客户端行为：无会话时发消息自动建会话
       let sid = sessionIdRef.current
       if (!sid) {
@@ -269,26 +277,56 @@ export function useWorkbench() {
         setSessionId(meta.id)
         sid = meta.id
       }
-      await svc.sendInput(currentId, trimmed)
+      setGenerating(true)
+      try {
+        await svc.sendInput(currentId, trimmed)
+      } finally {
+        setGenerating(false)
+      }
     },
-    [svc, currentId],
+    [svc, currentId, generating],
   )
 
   /** 重新生成（13.16 对标市面）：重发当前会话最后一条用户消息，stub 流式出新回复 */
   const regenerate = useCallback(async () => {
-    if (!currentId) return
+    if (!currentId || generating) return
     const lastUser = [...output].reverse().find((e) => e.kind === 'user')
     if (!lastUser) {
       toast('没有可重新生成的内容')
       return
     }
-    await svc.sendInput(currentId, lastUser.text)
-  }, [svc, currentId, output])
+    setGenerating(true)
+    try {
+      await svc.sendInput(currentId, lastUser.text)
+    } finally {
+      setGenerating(false)
+    }
+  }, [svc, currentId, output, generating])
+
+  /** 停止生成（输入框 ■，13.17）：stub 中断打字机并落定条目；接线轮映射 agent:input 的 stop */
+  const stopGeneration = useCallback(async () => {
+    if (!currentId || !generating) return
+    await svc.stopGeneration(currentId).catch(() => {})
+  }, [svc, currentId, generating])
+
+  /**
+   * 转交任务（13.17 任务书 §十九/§二十二）：结构 TransferPayload 在服务层定死。
+   * 成功/失败的状态反馈由 TransferDialog 呈现；这里只负责落地 + 刷新通知。
+   */
+  const transferTask = useCallback(
+    async (payload: TransferPayload): Promise<TransferResult> => {
+      const r = await svc.transferTask(payload)
+      void svc.listNotifications().then(setNotifications).catch(() => {})
+      return r
+    },
+    [svc],
+  )
 
   return {
     agents, current, sessions, sessionId, sessionTitle, output, busy, model, models,
+    generating, notifications,
     switchAgent, newSession, switchSession, renameSession, deleteSession, toggleSessionPin,
-    switchModel, regenerate,
+    switchModel, regenerate, stopGeneration, transferTask,
     start, stop, restart, togglePin,
     clear, copy, exportSession, openLogs, send,
   }

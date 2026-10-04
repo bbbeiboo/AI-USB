@@ -1234,3 +1234,74 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
    的提交（Enter/失焦）在 UIA 驱动下正常触发——可复用的测试手法。
 3. **radix DropdownMenuItem 的 onSelect preventDefault** 可保持菜单打开——「二次确认删除」武装态
    依此实现，无需自建弹层。
+
+## 13.17 UI 重构 + 功能接口预留（先 UI 后真实 Agent；任务书 45 条全量落地）
+
+**输入**：用户提供的《AI Agent 母盘——UI 重构与功能接口预留任务》（豆包任务书格式，45 节）。
+与 13.15/13.16 已完成项高度重叠（Logo=切换器、开机自启、无启停栏、会话管理、模型切换），
+本轮落地其新增裁决并把全部按钮/页面/数据结构/服务接口补齐。
+
+### 需求与实现
+| 任务书条款 | 实现 |
+| --- | --- |
+| §五 切换器菜单=logo+名+描述+选中态 | AgentSummary 增加 `desc`；菜单项双行+「当前」勾标；在线状态点移除（§六禁令） |
+| §七 顶栏右=🔍🔔⋯ | `app-search`（会话/任务/文件分组结果）+ `app-notifications`（Mock 通知+蓝点）+ `app-more`（检查更新/快捷键子菜单/导入/导出配置/打开日志/关于）；中部会话名移除（§八：归工作台） |
+| §八/§九 工作台顶部只留会话名+⋯ | `workbench-menu`：重命名（行内 input）/导出 md/json（子菜单）/清空/删除（二次确认）；模型 chip 与 regenerate 从工具条移除 |
+| §十/§十一 侧栏导航+左下用户区 | `side-nav` 四入口（会话/任务/文件/队列）→ 主区视图切换；用户块弹出 个人资料/账户/使用情况/退出登录（stub toast，使用情况→设置弹窗）+ 设置行 |
+| §十二 删底部 StatusBar | StatusBar.tsx 删除，`status-bar*` 零命中；日志入口迁 ⋯ 菜单；stub 标识迁通知中心首条 + 各 toast |
+| §十三~§十六 输入框重做 | ChatInput 组件：＋菜单（上传文件/文件夹/图片/代码，stub toast）、📎、dragover/drop 接口（drop→内存附件 chips，不读内容）、model-selector 入框右下角、发送 ↑ ⇄ 生成中 ■ |
+| §十七~§二十三 每轮回复带转交 | RecommendationCard（推荐目标+匹配度+理由+转交钮，stub 确定性映射）+ TransferDialog（radio 组：推荐星标默认选中/当前 Agent disabled 明示禁令 §二十一/三附带 checkbox；状态机 idle→submitting→success→error）；TransferPayload 结构定死服务层 |
+| §二十四~§二十六 任务/队列/文件 | TaskPanel（五状态徽标+打开会话跳转）、QueuePanel（队列位置+规则说明）、FilePanel（7 列+行菜单 5 操作 stub toast）；种子数据演示全部状态 |
+| §二十七 Settings | 既有设置弹窗三组件 **不动**（13.13 硬规则 6）；入口映射：账户→用户菜单(stub)、API→弹窗、模型→输入框、任务/文件→面板、快捷键→⋯子菜单、关于→⋯→设置弹窗 |
+| §三十四/§三十五 类型+服务 | agent-control-types 增 Task/QueueEntry/FileItem/TransferPayload/AgentRecommendation/AppNotification/TaskStatus/NotificationKind；服务接口 +8 方法（listTasks/listQueue/listFiles/getRecommendation/transferTask/listNotifications/stopGeneration + listModels 组已存）；stub 实现 + real 骨架 notWired + 通道映射表新行（task:list/queue、file:list、agent:transfer/recommend、task:events、agent:input stop） |
+| §十六 停止生成 | stub sendInput 改「代数戳 + 可中断 sleepGen」：stopGeneration 自增 genSeq，打字机分片在下一轮询片退出并落定「（已停止生成（stub））」；hook 暴露 generating + stopGeneration，send/regenerate 共用 |
+| §三十一 响应式 | 默认窗口 1281×801（>720 最低要求），全 flex+min-w-0 布局，输入框 max-h-40 自适应 |
+
+### 刻意的设计取舍
+- **帮助并入「快捷键」子菜单 +「关于」**：任务书 §七 列了 快捷键 与 帮助 两项，内容完全重叠
+  （13.16 帮助=快捷键面板），合并避免重复入口；「关于」直接打开既有设置弹窗（about 面板在其中）。
+- **消息级 ⋯ 不做**：任务书 §十七 mockup 有「复制 重新生成 ⋯」但未定义 ⋯ 内容（§三十八-10 禁止
+  自定需求），只做 复制/重新生成，且仅挂在最后一条 agent 消息下（stub regenerate 只能重发最后输入）。
+- **当前 Agent 用 disabled 而非隐藏**（§二十一允许二选一）：disabled 能把规则「看得见」。
+- **转交成功后不切 Agent**：任务书语义是任务进入目标队列，不是切换工作上下文；通知+任务页可查。
+- **面板挂载即拉数据**（svc.listTasks 等）：视图切换即刷新，转交后重进任务页可见新任务；
+  通知列表在 hook 持有，转交后即时刷新。
+
+### 走查中发现并修复
+1. **stub listAgents 映射漏 desc**：首包真机走查发现切换菜单只有名称没有描述行（类型有字段、
+   种子有文案、映射漏字段）。修复+补单测断言（desc 非空）→ 重建重打包复验通过。
+   教训：UIA 可访问名是逐字拼接的文本，缺一行在 walk 输出里一目了然。
+
+### 新坑
+1. **radix Popover 的 UIA ExpandCollasePattern Expand() 不总即时生效**：首次 Expand 后 0.6s walk
+   可能仍无菜单项，再 Expand 一次（幂等）后出现——走查脚本对 Popover 触发钮固定「点两次+walk」。
+2. **UIA SetValue 写入会被受控重渲染清空**：textarea 的 value 被下一次 React 渲染重置为 state（''），
+   SetValue→延迟点击发送 会发空消息。可靠做法=SetFocus+SendKeys 真实键入。
+3. **截图进程启动耗时 ~1s 吃掉 stub 1.1s 生成窗口**：抓「生成中」画面必须预编译捕获类型并在
+   同一 PS 进程内 SendKeys→立即 Cap（capture-during-1317.ps1）。
+4. **.ps1 UTF-8 BOM 老坑复发**：无 BOM 的中文脚本在 PS5.1 下按 ANSI 解析直接语法错误（再入规范）。
+
+### 验收（对照任务书 §四十一 checklist 全绿 + §四十二 质量项）
+- tsc 0 错误；vite build 通过（index-joduMSl7.js 441.33KB）；node --test 57/57（含 13.17 五个新测试组：
+  任务/队列/文件种子、推荐映射、转交登记+禁自转交、stopGeneration 中断/幂等、工厂契约 +8 方法、
+  real 骨架 +8 notWired）。
+- asar 核查：新 Aid 全命中（app-search/app-notifications/app-more/transfer-dialog/agent-ctrl-stop/
+  view-task|queue|files/recommendation-card/workbench-menu/chat-add-*/attachment-chip/…，nav-* 为动态
+  模板 `nav-${id}` 已确认）；禁令 Aid 零命中（status-bar*/agent-ctrl-start|restart|pin|logs/agent-list-item）。
+- 真机 exe（1281×801）UIA 走查：切换器菜单(desc+当前)→切换→aria-label 跟随；发送→回显→流式→
+  推荐卡→转交弹窗→确认转交→成功态+toast；通知中心蓝点+转交通知；任务页 5 状态演示+打开会话跳转；
+  队列页位置连续；文件页行菜单；顶栏搜索分组命中；⋯ 六项+检查更新 toast+快捷键子菜单；＋菜单 4 项；
+  模型切换入框生效；发送→■ 停止（生成中截图实锤，中断逻辑单测覆盖）；用户菜单 4 项。截图 15 张
+  于 _verify/1317-real-exe-*.png（gitignore）。
+- 零净写入：15 文件基线前后一致（providers.json 两轮均 MISSING 一致）；launcher.log +1518B=本次
+  启停事件日志（既有豁免）。走查期间任务页出现 3 条转交记录（本脚本 1 条 + 疑似用户同时在实机上
+  点击 2 条），应用状态全程一致，恰为「每轮回复可转交」的真实多用户验证。
+- 打包前后均需 Stop-Process AI-Agent（用户实例 5 PID / 本轮复验 1 PID）。
+
+### 未完成 / Mock 清单（任务书 §四十四.5，下一轮接线）
+- 全部面板与通知为 stub 内存数据：任务/队列/文件的真实来源（Agent 工作目录、任务状态机）待接线轮；
+- 附件上传/＋菜单/文件面板操作均为 stub toast 或内存登记，真实文件管线待接线轮；
+- 转交只登记 stub 任务，不向真实 Agent 发送；推荐为确定性映射，真实推荐待接线轮；
+- 新通道 task:list/queue、file:list/export、agent:transfer/recommend、task:events、agent:input-stop
+  均未在 preload/main 实现（real 骨架 throw not-wired-yet）；
+- 用户身份为 stub 展示（登录接线轮 13.6-1 会把用户菜单变成真实身份）。

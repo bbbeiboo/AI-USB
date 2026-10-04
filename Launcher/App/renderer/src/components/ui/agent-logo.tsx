@@ -11,8 +11,8 @@ import { cn } from 'cn'
 const LOGO_SRC: Record<string, string> = {
   openclaw: 'logos/openclaw.svg',
   hermes: 'logos/hermes.png',
-  codex: 'logos/codex.svg',
-  'claude-code': 'logos/claude-code.ico',
+  codex: 'logos/codex.png',
+  'claude-code': 'logos/claude-code.png',
 }
 
 const SIZES = {

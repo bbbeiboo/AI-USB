@@ -11,6 +11,7 @@ import { Check, Loader2, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AgentLogo } from '@/components/ui/agent-logo'
 import type { AgentSummary, TransferPayload, TransferResult } from '@/services/agent-control-types'
+import { transferAttachState, type TransferAttachKind, type TransferAttachState } from '@/services/capabilities/index'
 import { cn } from 'cn'
 
 type Phase = 'idle' | 'submitting' | 'success' | 'error'
@@ -81,6 +82,14 @@ export default function TransferDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, recommendationAgentId, currentAgent.id])
 
+  // 13.20 能力门控：目标切换后，目标不支持（unsupported）的附带内容强制取消勾选
+  useEffect(() => {
+    if (!open || !targetId) return
+    if (transferAttachState(targetId, 'conversation') === 'unsupported') setIncludeConversation(false)
+    if (transferAttachState(targetId, 'files') === 'unsupported') setIncludeFiles(false)
+    if (transferAttachState(targetId, 'task') === 'unsupported') setIncludeTask(false)
+  }, [open, targetId])
+
   // Escape 关闭（submitting 中不允许）
   useEffect(() => {
     if (!open) return
@@ -92,6 +101,15 @@ export default function TransferDialog({
   }, [open, phase, onOpenChange])
 
   if (!open) return null
+
+  // 目标能力 → 各附带内容的门控三态 + 需审批项清单
+  const conv: TransferAttachState = targetId ? transferAttachState(targetId, 'conversation') : 'ok'
+  const files: TransferAttachState = targetId ? transferAttachState(targetId, 'files') : 'ok'
+  const task: TransferAttachState = targetId ? transferAttachState(targetId, 'task') : 'ok'
+  const stateOf: Record<TransferAttachKind, TransferAttachState> = { conversation: conv, files, task }
+  const approvalList = (['conversation', 'files', 'task'] as TransferAttachKind[])
+    .filter((k) => stateOf[k] === 'approval')
+    .map((k) => ({ conversation: '当前对话', files: '当前文件', task: '当前任务' })[k])
 
   async function confirm() {
     if (!targetId || phase === 'submitting') return
@@ -205,13 +223,36 @@ export default function TransferDialog({
           </div>
         </div>
 
-        {/* 附带内容 */}
+        {/* 附带内容（13.20 能力门控：按目标 Agent 能力禁用/标注） */}
         <div className="mt-3 text-[11px] font-medium text-muted-foreground">附带内容</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <CheckRow id="transfer-check-conversation" label="当前对话" checked={includeConversation && !!conversationId} disabled={!conversationId} onToggle={() => setIncludeConversation((v) => !v)} />
-          <CheckRow id="transfer-check-files" label="当前文件" checked={includeFiles} onToggle={() => setIncludeFiles((v) => !v)} />
-          <CheckRow id="transfer-check-task" label="当前任务" checked={includeTask} onToggle={() => setIncludeTask((v) => !v)} />
+          <CheckRow
+            id="transfer-check-conversation"
+            label={`当前对话${conv === 'unsupported' ? ' · 目标不支持' : ''}`}
+            checked={includeConversation && !!conversationId && conv !== 'unsupported'}
+            disabled={!conversationId || conv === 'unsupported'}
+            onToggle={() => setIncludeConversation((v) => !v)}
+          />
+          <CheckRow
+            id="transfer-check-files"
+            label={`当前文件${files === 'unsupported' ? ' · 目标不支持' : ''}`}
+            checked={includeFiles && files !== 'unsupported'}
+            disabled={files === 'unsupported'}
+            onToggle={() => setIncludeFiles((v) => !v)}
+          />
+          <CheckRow
+            id="transfer-check-task"
+            label={`当前任务${task === 'unsupported' ? ' · 目标不支持' : ''}`}
+            checked={includeTask && task !== 'unsupported'}
+            disabled={task === 'unsupported'}
+            onToggle={() => setIncludeTask((v) => !v)}
+          />
         </div>
+        {approvalList.length > 0 ? (
+          <div id="transfer-approval-hint" className="mt-1 text-[11px] text-muted-foreground">
+            ⓘ {approvalList.join(' / ')} 需目标端审批
+          </div>
+        ) : null}
         <div className="mt-1 text-[11px] text-muted-foreground">stub 演示：附带内容只做接口预留，不发送真实数据</div>
 
         {/* 状态区（任务书 §三十） */}

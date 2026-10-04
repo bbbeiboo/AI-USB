@@ -1424,3 +1424,27 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
 - CredentialService stub 仅内存；真实实现走系统安全存储（DPAPI 已有先例）。
 - 14 个占位设置页待后续版本；设置页字段级渲染（implemented/planned/advanced）按 UI-MAP 在接线轮落地。
 - codex/claude-code 最新版本号会漂移，接线轮应改为动态探测。
+
+## 13.21 能力→UI 联动落地（13.20 未完成事项中无需「会话数据源」裁决的部分）
+
+### 需求与实现
+| 项 | 实现 |
+| --- | --- |
+| 转交门控 UI（UI-MAP §2） | capabilities/index.ts +transferAttachState（ok/approval/unsupported 三态纯函数）；TransferDialog 复选框按目标能力渲染：unsupported→禁用+「 · 目标不支持」并强制取消勾选（target 变更 effect）；permission-required→「ⓘ 当前文件 需目标端审批」提示行（Aid transfer-approval-hint）；服务层 canAcceptTransfer 兜底不变 |
+| 设置占位页升级 | 新 components/settings/pages/CapabilityPage.tsx 替换 14 页占位（无数据时回落原 PlaceholderPage 文案）：① 能力概览=页→能力组映射（PAGE_CAP_GROUPS）×四 Agent 聚合徽标（native/适配层/需授权/仅沙箱/不支持，line-through 标不支持）；② 字段只读预览=AGENT_SETTINGS_SCHEMAS 按 page 过滤，按 Agent 分组行（UI 名/key/类型/凭据/重启生效/settingsStatusBadge 三态徽标） |
+| 统一裁决落地 | 「显示但明确标记不支持」：Codex 语音=不支持（strike-through 徽标）、Hermes 归档=adapter 等全部可见 |
+| 禁令延续 | 页面零交互控件（无开关/输入框/按钮）；凭据字段只显「凭据」标记；Secret 明文零出现 |
+| 测试 | +3：transferAttachState（openclaw files=approval + 未知 agent 防呆 + 四 Agent 现状无 unsupported 锚定）、settingsStatusBadge 三态、Schema page 契约（全部字段 page ∈ 18 页∪{none}，覆盖 ≥10 页）→ 80/80 |
+
+### 验收
+- tsc 0 errors；vite build 通过；重打包 asar grep 到 settings-cap-page/需目标端审批。
+- 真机（PID 9612）：语音页截图=能力概览四家徽标（OpenClaw/Hermes/Claude Code 原生支持、Codex 不支持）+按 Agent 分组字段预览全部正常；切到 Hermes→转交弹窗→目标选 OpenClaw→「ⓘ 当前文件 需目标端审批」提示正确出现（1321-openclaw-radio.png）；账单页（无字段无能力）正确回落纯占位。
+- 零净写入：14 文件基线一致（launcher.log 豁免）。
+
+### 新坑
+- 本轮 UIA 对 radix 覆盖层极不稳定：agent-switcher 元素 0×0 矩形（包装 div）、弹层内容不进 UIA 树、transfer-target 行的 UIA 矩形合成点击不生效（Button 可、普通 button 行不可）——最终靠「截图读坐标→窗口相对坐标 WinClick」完成；UIA Aid 校验在弹窗层也不可靠，验收以截图为准。
+- （沿用）radix 菜单两击幂等 / FindFirst 两遍查询 / ESC 先弹层后弹窗。
+
+### 未完成（仍待用户裁决/后续版本）
+- 真接线轮核心（agent:sessions/output/input、settings:native 写真实配置、credential:* 系统安全存储、update:check 动态探测）——依赖「Agent 会话数据源」用户裁决；密钥零接触与零净写入在此轮才需要重新设计基线。
+- 登录接线 / 主题切换 / 14 页字段编辑能力（当前只读预览）。

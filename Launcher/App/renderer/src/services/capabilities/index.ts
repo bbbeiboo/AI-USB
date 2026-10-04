@@ -76,3 +76,37 @@ export function canAcceptTransfer(
   }
   return { ok: true, reason: '' }
 }
+
+/** 单项附带内容的门控三态（TransferDialog 复选框渲染依据，13.20 UI-MAP §2） */
+export type TransferAttachState = 'ok' | 'approval' | 'unsupported'
+
+/** 附带内容 → 对应能力 id */
+export type TransferAttachKind = 'conversation' | 'files' | 'task'
+
+const ATTACH_CAP: Record<TransferAttachKind, string> = {
+  conversation: 'transfer.conversation',
+  files: 'transfer.file',
+  task: 'transfer.task',
+}
+
+/**
+ * 单项附带内容门控：
+ *   ok          正常可选
+ *   approval    可选但需目标端审批（permission-required，UI 标「需目标端审批」）
+ *   unsupported 目标不支持（UI 禁用 + 标「目标不支持」；服务层 canAcceptTransfer 兜底）
+ */
+export function transferAttachState(targetId: string, kind: TransferAttachKind): TransferAttachState {
+  assertCapabilityAgent(targetId)
+  const caps = AGENT_CAPABILITIES[targetId]
+  const state = caps.groups.transfer.find((c) => c.id === ATTACH_CAP[kind])?.supported ?? 'unsupported'
+  if (state === 'permission-required') return 'approval'
+  if (state === 'unsupported') return 'unsupported'
+  return 'ok'
+}
+
+/** 设置页字段级渲染的状态徽标文案（UI-MAP：implemented 可编辑 / planned 说明 / advanced 只读） */
+export function settingsStatusBadge(status: 'implemented' | 'planned' | 'advanced/native-only'): string {
+  if (status === 'implemented') return '已开放编辑'
+  if (status === 'planned') return '后续版本开放'
+  return '仅原生配置入口'
+}

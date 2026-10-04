@@ -15,7 +15,7 @@ import ModelsPage from './pages/ModelsPage'
 import ArchivedPage from './pages/ArchivedPage'
 import HotkeysPage from './pages/HotkeysPage'
 import AboutPage from './pages/AboutPage'
-import PlaceholderPage from './pages/PlaceholderPage'
+import CapabilityPage from './pages/CapabilityPage'
 import { SETTINGS_SECTION_META } from './SettingsNav'
 import type { AgentSummary, SettingsSectionId } from '@/services/agent-control-types'
 
@@ -96,7 +96,8 @@ export default function SettingsDialog({ open, onOpenChange, initialSection, age
       case 'about':
         return <AboutPage />
       default:
-        return <PlaceholderPage sectionId={section} label={meta?.label ?? section} icon={meta?.icon ?? Search} />
+        // 13.21：占位页升级为「能力与字段只读预览」（统一裁决：显示但标记不支持；无数据时回落纯占位）
+        return <CapabilityPage sectionId={section} label={meta?.label ?? section} icon={meta?.icon ?? Search} agents={agents} />
     }
   })()
 

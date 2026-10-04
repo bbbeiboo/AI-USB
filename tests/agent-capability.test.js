@@ -3,7 +3,7 @@
 // 直接以 Node strip-types 加载渲染层 TS 源码。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CAPABILITY_GROUP_KEYS, AGENT_CAPABILITIES, AGENT_SETTINGS_SCHEMAS, AGENT_INFO, canAcceptTransfer } from '../Launcher/App/renderer/src/services/capabilities/index.ts';
+import { CAPABILITY_GROUP_KEYS, AGENT_CAPABILITIES, AGENT_SETTINGS_SCHEMAS, AGENT_INFO, canAcceptTransfer, transferAttachState, settingsStatusBadge } from '../Launcher/App/renderer/src/services/capabilities/index.ts';
 import { createStubAgentControlService, createStubCredentialService } from '../Launcher/App/renderer/src/services/agent-control-stub.ts';
 
 const AGENT_IDS = ['openclaw', 'hermes', 'codex', 'claude-code'];
@@ -275,4 +275,38 @@ test('testProvider：未知提供方防呆；已知提供方不伪造连通性�
   const r = await svc.testProvider('sensenova');
   assert.equal(r.ok, false);
   assert.match(r.message, /未发送任何请求/);
+});
+
+// —— 13.21 能力→UI 联动（UI-MAP §2 门控三态 + 字段级渲染契约）——————————
+
+test('transferAttachState：OpenClaw 文件=需审批（permission-required），其余附带领 ok；未知 agent 防呆', () => {
+  assert.equal(transferAttachState('openclaw', 'files'), 'approval');
+  assert.equal(transferAttachState('openclaw', 'conversation'), 'ok');
+  assert.equal(transferAttachState('openclaw', 'task'), 'ok');
+  for (const id of AGENT_IDS) {
+    for (const kind of ['conversation', 'files', 'task']) {
+      const s = transferAttachState(id, kind);
+      assert.ok(['ok', 'approval'].includes(s), `${id}.${kind} 现状不应为 unsupported（矩阵锚定）`);
+    }
+  }
+  assert.throws(() => transferAttachState('nope', 'files'), /unknown agent/);
+});
+
+test('settingsStatusBadge：三态文案映射（13.21 字段级渲染）', () => {
+  assert.equal(settingsStatusBadge('implemented'), '已开放编辑');
+  assert.equal(settingsStatusBadge('planned'), '后续版本开放');
+  assert.equal(settingsStatusBadge('advanced/native-only'), '仅原生配置入口');
+});
+
+test('Schema page 契约：全部字段的 page ∈ 18 项设置页 ∪ {none}（字段级渲染的落点必须真实存在）', () => {
+  const PAGES = new Set(['models', 'chat', 'appearance', 'workspace', 'security', 'browser', 'memory', 'voice',
+    'advanced', 'notifications', 'billing', 'providers', 'gateway', 'hotkeys', 'keys', 'plugins', 'archived', 'about', 'none']);
+  for (const id of AGENT_IDS) {
+    for (const f of AGENT_SETTINGS_SCHEMAS[id]) {
+      assert.ok(PAGES.has(f.page), `${id} ${f.key}.page=${f.page} 不在设置页清单`);
+    }
+  }
+  const pagesWithData = new Set();
+  for (const id of AGENT_IDS) for (const f of AGENT_SETTINGS_SCHEMAS[id]) if (f.page !== 'none') pagesWithData.add(f.page);
+  assert.ok(pagesWithData.size >= 10, `字段应覆盖多数设置页（实际 ${pagesWithData.size}）`);
 });

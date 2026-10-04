@@ -1360,3 +1360,16 @@ stub 阶段不做点击行为、不伪造个人中心弹窗（同 13.13 砍按�
 - 设置 10 方法全 stub 内存态：主模型配置/辅助绑定不落盘、不写 providers.json；重启应用即回默认；
 - 提供方清单为演示分组（模型名与 13.17 同源），真实 provider 缓存接线轮统一；
 - MoA 预设为演示值；占位 14 页待后续版本逐页实装；构建时间为 stub 注入。
+
+## 13.19 更换 Codex / Claude Code logo（用户提供图）
+
+- 用户给图：Codex=蓝云+终端符（下载.jpg，JPG 棋盘格假透明）；Claude Code=橙色星芒（PNG 白底不透明）。
+- 处理：PIL 从边缘 BFS 泛洪抠底 → 真透明 PNG（codex.png 119×118、claude-code.png 148×148）。
+  阈值：codex 浅色中性（≥205 且 RGB 差≤30，棋盘白/浅灰全吃掉、蓝云保留）；claude 近白（≥235）。
+  云朵内部的白色终端符不与边缘连通，泛洪不会吃掉。
+- 变更：LOGO_SRC 指向新 PNG；删除 codex.svg / claude-code.ico。唯 13.14「官方站点获取」来源说明
+  自本轮起按用户裁决覆盖（NOTES 留痕）。
+- 验收：tsc/build 通过（index-CDYPHL0F.js）；真机走查——切换菜单(xs)、顶栏(md)、推荐卡(xs) 三处
+  渲染干净（无字母回退、无棋盘格残留、透明底正常），截图 3 张 _verify/1319-*.png；
+  零净写入基线一致。commit 12d2b4c。
+- 注意：pip 装了 pillow（12.3.0）仅作一次性资产处理工具，非项目依赖（package.json 零变化）。

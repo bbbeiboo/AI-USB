@@ -51,6 +51,9 @@
       "json-util.js",
       "hermes-acp-gateway.js",
       "session-index.js",
+      "openclaw-gateway.js",
+      "codex-appserver.js",
+      "claude-cli-bridge.js",
       "auth-service.js",
       "ipc-auth.js",
       "renderer/dist/**/*"

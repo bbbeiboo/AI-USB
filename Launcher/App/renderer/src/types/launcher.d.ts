@@ -500,6 +500,18 @@ export interface LauncherApi {
   hermesIndexUpdate: (payload: { nativeSessionId: string; patch: Record<string, unknown> }) => Promise<{ ok: boolean; error?: string }>
   hermesIndexRemove: (nativeSessionId: string) => Promise<{ ok: boolean; error?: string }>
   onHermesSessionEvent: (cb: (payload: { nativeSessionId: string; event: unknown }) => void) => void
+  // 13.23: 四 Agent 统一会话桥（openclaw/codex/claude-code；hermes 老通道保留不动）
+  agentSessionList: (agentId: string) => Promise<AgentSessionListResult>
+  agentSessionCreate: (agentId: string, params?: { title?: string }) => Promise<AgentSessionResult>
+  agentSessionOpen: (agentId: string, nativeSessionId: string) => Promise<AgentOpenResult>
+  agentSessionSend: (payload: { agentId: string; nativeSessionId: string; text: string }) => Promise<{ ok: boolean; error?: string; code?: string }>
+  agentSessionStop: (agentId: string, nativeSessionId: string) => Promise<{ ok: boolean; error?: string; code?: string }>
+  agentSessionDelete: (agentId: string, nativeSessionId: string) => Promise<{ ok: boolean; error?: string; code?: string }>
+  agentSessionRename: (payload: { agentId: string; nativeSessionId: string; title: string }) => Promise<{ ok: boolean; indexOnly?: boolean; error?: string; code?: string }>
+  agentSessionArchive: (payload: { agentId: string; nativeSessionId: string; archived: boolean }) => Promise<{ ok: boolean; indexOnly?: boolean; error?: string; code?: string }>
+  agentIndexUpdate: (payload: { agentId: string; nativeSessionId: string; patch: Record<string, unknown> }) => Promise<{ ok: boolean; error?: string }>
+  agentIndexRemove: (agentId: string, nativeSessionId: string) => Promise<{ ok: boolean; error?: string }>
+  onAgentSessionEvent: (cb: (payload: { agentId: string; nativeSessionId: string; event: unknown }) => void) => void
 }
 
 export interface HermesIndexEntry {
@@ -532,6 +544,35 @@ export interface HermesOpenResult {
   ok: boolean
   session?: { agentId: string; nativeSessionId: string; title: string; status: string }
   history?: unknown[]
+  error?: string
+  code?: string
+}
+
+// --- 13.23: 四 Agent 统一会话桥结果（openclaw/codex/claude-code）-------------
+/** agents:session:list 行 = 聚合器索引条目（形状与 HermesIndexEntry 一致） */
+export type AgentIndexEntry = HermesIndexEntry
+
+export interface AgentSessionListResult {
+  ok: boolean
+  sessions?: AgentIndexEntry[]
+  /** false = 该 Agent 无官方列表（claude-code），sessions 仅索引条目 */
+  nativeSync?: boolean
+  error?: string
+  code?: string
+}
+
+export interface AgentSessionResult {
+  ok: boolean
+  session?: { agentId: string; nativeSessionId: string; title: string; status: string }
+  error?: string
+  code?: string
+}
+
+export interface AgentOpenResult {
+  ok: boolean
+  session?: { agentId: string; nativeSessionId: string; title: string; status: string; historyNote?: string }
+  history?: unknown[]
+  historyNote?: string
   error?: string
   code?: string
 }

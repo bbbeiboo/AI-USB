@@ -58,4 +58,16 @@ contextBridge.exposeInMainWorld('launcher', {
   hermesIndexUpdate: (payload) => ipcRenderer.invoke('hermes:index:update', payload),
   hermesIndexRemove: (nativeSessionId) => ipcRenderer.invoke('hermes:index:remove', nativeSessionId),
   onHermesSessionEvent: (cb) => ipcRenderer.on('hermes:session:event', (_e, payload) => cb(payload)),
+  // 13.23: 四 Agent 统一会话桥（openclaw/codex/claude-code；hermes 老通道保留不动）
+  agentSessionList: (agentId) => ipcRenderer.invoke('agents:session:list', agentId),
+  agentSessionCreate: (agentId, params) => ipcRenderer.invoke('agents:session:create', { agentId, params }),
+  agentSessionOpen: (agentId, nativeSessionId) => ipcRenderer.invoke('agents:session:open', { agentId, nativeSessionId }),
+  agentSessionSend: (payload) => ipcRenderer.invoke('agents:session:send', payload),
+  agentSessionStop: (agentId, nativeSessionId) => ipcRenderer.invoke('agents:session:stop', { agentId, nativeSessionId }),
+  agentSessionDelete: (agentId, nativeSessionId) => ipcRenderer.invoke('agents:session:delete', { agentId, nativeSessionId }),
+  agentSessionRename: (payload) => ipcRenderer.invoke('agents:session:rename', payload),
+  agentSessionArchive: (payload) => ipcRenderer.invoke('agents:session:archive', payload),
+  agentIndexUpdate: (payload) => ipcRenderer.invoke('agents:index:update', payload),
+  agentIndexRemove: (agentId, nativeSessionId) => ipcRenderer.invoke('agents:index:remove', { agentId, nativeSessionId }),
+  onAgentSessionEvent: (cb) => ipcRenderer.on('agents:session:event', (_e, payload) => cb(payload)),
 });

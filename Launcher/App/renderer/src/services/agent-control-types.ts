@@ -289,9 +289,16 @@ export interface AgentSession {
 export type AgentEvent =
   | { type: 'message_start' }
   | { type: 'text_delta'; text: string }
+  /**
+   * 13.23 增补（additive）：累积替换式文本（OpenClaw chat delta 帧固定 replace:true，
+   * deltaText=累计全量）。渲染层把流式条目整段替换，不与 text_delta 拼接。
+   */
+  | { type: 'text_replace'; text: string }
   | { type: 'tool_start'; name: string; input?: unknown }
   | { type: 'tool_result'; name: string; summary?: string }
   | { type: 'thinking'; text: string }
+  /** 13.23 增补（additive）：思考文本前缀断裂（OpenClaw reasoning 投影替换）时的整段替换 */
+  | { type: 'thinking_replace'; text: string }
   | { type: 'file'; path: string; action: string }
   | { type: 'error'; message: string; code?: string }
   | { type: 'message_end'; stopReason?: string }

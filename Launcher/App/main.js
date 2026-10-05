@@ -1568,8 +1568,288 @@ ipcMain.handle('hermes:session:delete', async (_e, nativeSessionId) => {
   } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
 });
 
+// --- 13.23: 四 Agent 统一会话桥（openclaw / codex / claude-code）--------------
+// 架构裁决与 13.22 Hermes 先例一致：Agent 原生会话 = Source of Truth；聚合器只持索引。
+// hermes 老通道（hermes:*）保留不动；其余三 Agent 走统一 agents:session:* 通道，
+// 事件经统一广播 agents:session:event（载荷带 agentId）。
+const { createOpenClawGateway } = require('./openclaw-gateway');
+const { createCodexAppServer } = require('./codex-appserver');
+const { createClaudeCliBridge } = require('./claude-cli-bridge');
+
+function sessionNodeExe() {
+  const bundled = path.join(ROOT, 'Runtime', 'Node', 'node.exe');
+  return fs.existsSync(bundled) ? bundled : process.execPath;
+}
+
+/**
+ * 会话桥 provider env（复用既有注入链；密钥值不出主进程，仅进子进程 env 块）。
+ * providers.json（bundled）优先；DPAPI 用户配置兜底。openclaw 无 provider env
+ * （凭据归 OpenClaw 自己的 state，密钥零接触不读）。
+ */
+async function sessionAgentEnv(agentId) {
+  if (agentId === 'openclaw') return {};
+  const cfgId = agentId === 'claude-code' ? 'claudeCode' : agentId;
+  const secretId = agentId === 'claude-code' ? 'claude' : agentId;
+  const bundled = buildBundledProviderEnv(cfgId);
+  if (bundled) {
+    const env = { ...bundled.env };
+    if (agentId === 'codex' && bundled.model && bundled.model.baseUrl && bundled.model.model) {
+      try { syncCodexModelConfig(bundled.model.baseUrl, bundled.model.model); } catch (e) { log('Agent=codex Action=SyncConfig Result=FAIL source=session-bridge reason=' + safe(e)); }
+    }
+    return env;
+  }
+  const env = {};
+  if (typeof hasSecret === 'function' && hasSecret(secretId)) {
+    try {
+      const cfg = loadUserConfig();
+      const aCfg = (cfg.agents && (cfg.agents[secretId] || cfg.agents[agentId])) || {};
+      if (aCfg.baseUrl && aCfg.model) {
+        const plain = await loadSecretPlain(secretId);
+        if (plain) {
+          if (agentId === 'codex') {
+            env.OPENAI_API_KEY = plain;
+            if (aCfg.baseUrl) env.OPENAI_BASE_URL = aCfg.baseUrl;
+            try { syncCodexModelConfig(aCfg.baseUrl, aCfg.model); } catch (e) { log('Agent=codex Action=SyncConfig Result=FAIL source=session-bridge-user reason=' + safe(e)); }
+          } else {
+            env.ANTHROPIC_API_KEY = plain;
+            if (aCfg.baseUrl) env.ANTHROPIC_BASE_URL = aCfg.baseUrl;
+            if (aCfg.model) env.ANTHROPIC_MODEL = aCfg.model;
+            env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT = '1';
+          }
+        }
+      }
+    } catch (e) { log('Agent=' + agentId + ' Action=Env Result=FAIL source=session-bridge reason=' + safe(e)); }
+  }
+  return env;
+}
+
+let openclawGateway = null;
+let codexAppServer = null;
+let claudeCliBridge = null;
+
+async function getOpenClawGateway() {
+  if (openclawGateway) return openclawGateway;
+  openclawGateway = createOpenClawGateway({
+    nodeExe: sessionNodeExe(),
+    openclawEntry: path.join(ROOT, 'Agents', 'OpenClaw', 'App', 'node_modules', 'openclaw', 'openclaw.mjs'),
+    openclawAppDir: path.join(ROOT, 'Agents', 'OpenClaw', 'App'),
+    stateDir: path.join(ROOT, 'Agents', 'OpenClaw', 'Data'),
+    configPath: path.join(ROOT, 'Agents', 'OpenClaw', 'Config', 'config.yaml'),
+    deviceFile: path.join(ROOT, 'Launcher', 'Data', 'openclaw-device.json'),
+    gatewayTokenFile: path.join(ROOT, 'Launcher', 'Data', 'openclaw-gateway-token.json'),
+    env: await sessionAgentEnv('openclaw'),
+    log: (m) => log('Agent=openclaw Surface=gateway ' + m),
+  });
+  return openclawGateway;
+}
+
+async function getCodexAppServer() {
+  if (codexAppServer) return codexAppServer;
+  codexAppServer = createCodexAppServer({
+    nodeExe: sessionNodeExe(),
+    codexEntry: path.join(ROOT, 'Agents', 'Codex', 'App', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+    codexHome: path.join(ROOT, 'Agents', 'Codex'),
+    env: await sessionAgentEnv('codex'),
+    log: (m) => log('Agent=codex Surface=app-server ' + m),
+  });
+  return codexAppServer;
+}
+
+async function getClaudeCliBridge() {
+  if (claudeCliBridge) return claudeCliBridge;
+  claudeCliBridge = createClaudeCliBridge({
+    // 安装器把 wrapper 包 bin/claude.exe 改名为 .old；真身在 win32-x64 平台包
+    command: path.join(ROOT, 'Agents', 'ClaudeCode', 'App', 'node_modules', '@anthropic-ai', 'claude-code-win32-x64', 'claude.exe'),
+    wrapperEntry: path.join(ROOT, 'Agents', 'ClaudeCode', 'App', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs'),
+    nodeExe: sessionNodeExe(),
+    configDir: path.join(ROOT, 'Agents', 'ClaudeCode'),
+    workspace: path.join(ROOT, 'Agents', 'ClaudeCode'),
+    env: await sessionAgentEnv('claude-code'),
+    log: (m) => log('Agent=claude-code Surface=cli ' + m),
+  });
+  attachClaudeCliBridgeEvents(claudeCliBridge);
+  return claudeCliBridge;
+}
+
+/** 统一事件广播：载荷带 agentId（hermes 老通道 hermes:session:event 保留不动） */
+function pushAgentSessionEvent(agentId, payload) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    try { if (!w.isDestroyed()) w.webContents.send('agents:session:event', { agentId, ...payload }); } catch (_) {}
+  }
+}
+
+function sessionBridgeFor(agentId) {
+  if (agentId === 'openclaw') return getOpenClawGateway();
+  if (agentId === 'codex') return getCodexAppServer();
+  if (agentId === 'claude-code') return getClaudeCliBridge();
+  return null;
+}
+
+/** claude-code 无官方会话列表/删除：能力裁决落在主进程，渲染层按 code 渲染 */
+const NATIVE_SESSION_SUPPORT = {
+  openclaw: { rename: 'native', archive: 'native', delete: 'native' },
+  codex: { rename: 'native', archive: 'native', delete: 'native' },
+  'claude-code': { rename: 'index', archive: 'index', delete: 'unsupported' },
+};
+
+// 会话列表：官方接口（openclaw sessions.list / codex thread/list）→ 索引同步；
+// claude-code 无官方列表 → 只回索引条目（nativeSync:false，不伪造原生同步）
+ipcMain.handle('agents:session:list', async (_e, agentId) => {
+  const id = String(agentId || '');
+  try {
+    if (id === 'claude-code') {
+      return { ok: true, sessions: sessionIndex.all().filter((r) => r.agentId === 'claude-code'), nativeSync: false };
+    }
+    const bridge = await sessionBridgeFor(id);
+    if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+    const natives = await bridge.listSessions();
+    const rows = sessionIndex.sync(id, natives);
+    return { ok: true, sessions: rows, nativeSync: true };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+ipcMain.handle('agents:session:create', async (_e, payload) => {
+  const { agentId, params } = payload || {};
+  const id = String(agentId || '');
+  try {
+    const bridge = await sessionBridgeFor(id);
+    if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+    const s = await bridge.createSession(params || {});
+    sessionIndex.upsert(id, s.nativeSessionId, { title: (params && params.title) || '' });
+    return { ok: true, session: s };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+ipcMain.handle('agents:session:open', async (_e, payload) => {
+  const { agentId, nativeSessionId } = payload || {};
+  const id = String(agentId || '');
+  try {
+    const bridge = await sessionBridgeFor(id);
+    if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+    const r = await bridge.loadSession(String(nativeSessionId));
+    return { ok: true, session: r, history: r.history || [], historyNote: r.historyNote };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+ipcMain.handle('agents:session:send', async (_e, payload) => {
+  const { agentId, nativeSessionId, text } = payload || {};
+  const id = String(agentId || '');
+  const sid = String(nativeSessionId || '');
+  try {
+    const bridge = await sessionBridgeFor(id);
+    if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+    let preview = '';
+    for await (const ev of bridge.streamMessage(sid, String(text ?? ''))) {
+      pushAgentSessionEvent(id, { nativeSessionId: sid, event: ev });
+      if (ev.type === 'text_replace') preview = ev.text;
+      else if (ev.type === 'text_delta') preview += ev.text;
+      if (ev.type === 'session_info' && ev.title) sessionIndex.update(id, sid, { title: ev.title });
+    }
+    if (preview) sessionIndex.update(id, sid, { lastMessagePreview: preview.slice(-200), orphaned: false });
+    return { ok: true };
+  } catch (e) {
+    // 真实失败必须让 UI 看到回合终止（禁止失败后显示「任务完成」）
+    pushAgentSessionEvent(id, { nativeSessionId: sid, event: { type: 'error', message: safe(e), code: e.code || 'protocol' } });
+    // --resume 失败 = 官方探测到孤儿会话 → 索引标记（不伪造、不自动重建）
+    if (id === 'claude-code' && e.code === 'session-not-found') {
+      try { sessionIndex.update(id, sid, { orphaned: true }); } catch (_) {}
+    }
+    return { ok: false, error: safe(e), code: e.code || 'protocol' };
+  }
+});
+
+ipcMain.handle('agents:session:stop', async (_e, payload) => {
+  const { agentId, nativeSessionId } = payload || {};
+  try {
+    const bridge = await sessionBridgeFor(String(agentId || ''));
+    if (!bridge) return { ok: false, error: 'unknown agent', code: 'unsupported' };
+    await bridge.stopGeneration(String(nativeSessionId || ''));
+    return { ok: true };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+ipcMain.handle('agents:session:delete', async (_e, payload) => {
+  const { agentId, nativeSessionId } = payload || {};
+  const id = String(agentId || '');
+  const sid = String(nativeSessionId || '');
+  if ((NATIVE_SESSION_SUPPORT[id] || {}).delete === 'unsupported') {
+    return { ok: false, error: `${id} 无官方会话删除接口（能力裁决 UNSUPPORTED）`, code: 'unsupported' };
+  }
+  try {
+    const bridge = await sessionBridgeFor(id);
+    if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+    await bridge.deleteSession(sid);
+    sessionIndex.remove(id, sid);
+    return { ok: true };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 重命名：openclaw/codex=官方原生（sessions.patch label / thread/name/set）+ 索引；
+// claude-code=仅聚合器索引语义（无官方途径，与 Hermes rename 同级，返回 indexOnly）
+ipcMain.handle('agents:session:rename', async (_e, payload) => {
+  const { agentId, nativeSessionId, title } = payload || {};
+  const id = String(agentId || '');
+  const sid = String(nativeSessionId || '');
+  const clean = String(title || '').trim();
+  try {
+    if ((NATIVE_SESSION_SUPPORT[id] || {}).rename === 'native') {
+      const bridge = await sessionBridgeFor(id);
+      if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+      await bridge.renameSession(sid, clean);
+    }
+    const r = sessionIndex.update(id, sid, clean ? { title: clean, titleSource: 'user' } : {});
+    return { ok: !!r, indexOnly: (NATIVE_SESSION_SUPPORT[id] || {}).rename !== 'native' };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 归档/恢复：openclaw/codex=官方原生 + 索引；claude-code=仅索引
+ipcMain.handle('agents:session:archive', async (_e, payload) => {
+  const { agentId, nativeSessionId, archived } = payload || {};
+  const id = String(agentId || '');
+  const sid = String(nativeSessionId || '');
+  try {
+    if ((NATIVE_SESSION_SUPPORT[id] || {}).archive === 'native') {
+      const bridge = await sessionBridgeFor(id);
+      if (!bridge) return { ok: false, error: 'unknown agent: ' + id, code: 'unsupported' };
+      await bridge.archiveSession(sid, archived !== false);
+    }
+    const r = sessionIndex.update(id, sid, { archived: archived !== false });
+    return { ok: !!r, indexOnly: (NATIVE_SESSION_SUPPORT[id] || {}).archive !== 'native' };
+  } catch (e) { return { ok: false, error: safe(e), code: e.code || 'protocol' }; }
+});
+
+// 索引元数据（置顶/展示名/归档）——只写索引，不触原生
+ipcMain.handle('agents:index:update', (_e, payload) => {
+  try {
+    const { agentId, nativeSessionId, patch } = payload || {};
+    const r = sessionIndex.update(String(agentId || ''), String(nativeSessionId || ''), patch || {});
+    return { ok: !!r, entry: r };
+  } catch (e) { return { ok: false, error: safe(e) }; }
+});
+ipcMain.handle('agents:index:remove', (_e, payload) => {
+  try {
+    const { agentId, nativeSessionId } = payload || {};
+    return { ok: sessionIndex.remove(String(agentId || ''), String(nativeSessionId || '')) };
+  } catch (e) { return { ok: false, error: safe(e) }; }
+});
+
+// claude-code 官方 init 消息 → 索引登记（原生 session_id 真源键）
+let claudeCliBridgeAttached = false;
+function attachClaudeCliBridgeEvents(bridge) {
+  if (claudeCliBridgeAttached) return;
+  claudeCliBridgeAttached = true;
+  bridge.onEvent((kind, info) => {
+    if (kind === 'init' && info && info.native) {
+      try { sessionIndex.upsert('claude-code', String(info.native), {}); } catch (_) {}
+    }
+  });
+}
+
 app.on('before-quit', () => {
   try { if (hermesGateway) { hermesGateway.close(); hermesGateway = null; } } catch (_) {}
+  try { if (openclawGateway) { openclawGateway.close(); openclawGateway = null; } } catch (_) {}
+  try { if (codexAppServer) { codexAppServer.close(); codexAppServer = null; } } catch (_) {}
+  try { if (claudeCliBridge) { claudeCliBridge.close(); claudeCliBridge = null; } } catch (_) {}
 });
 
 // --- Exports for the standalone test scripts (Launcher/App/*_test.cjs) -------
@@ -1579,6 +1859,7 @@ app.on('before-quit', () => {
 module.exports = {
   loadUserConfig, saveUserConfig, defaultUserConfig,
   bundledProvider, buildBundledProviderEnv, loadManifest,
+  syncCodexModelConfig,
   readJsonSafe, stripBom, safe,
   ensureLogDir, getLogPath: () => activeLogPath,
   ROOT, USER_CONFIG, AGENTS_JSON, LOG_DIR, CONFIG_IDS,
